@@ -127,14 +127,19 @@ enum EnvStoreBrokerMain {
       applicationSupport
       .appending(path: "EnvStore", directoryHint: .isDirectory)
       .appending(path: "vault.sqlite")
-    let vaultAvailable = FileManager.default.fileExists(atPath: databaseURL.path)
-    let store = try? EncryptedVaultStore(
-      databaseURL: databaseURL,
-      rootKeyStore: KeychainRootKeyStore(),
-      verifyRootKeyOnOpen: false,
-      allowCreatingVault: false
+    let service = BrokerService(
+      storeProvider: {
+        try? EncryptedVaultStore(
+          databaseURL: databaseURL,
+          rootKeyStore: KeychainRootKeyStore(),
+          verifyRootKeyOnOpen: false,
+          allowCreatingVault: false
+        )
+      },
+      vaultAvailabilityProvider: {
+        FileManager.default.fileExists(atPath: databaseURL.path)
+      }
     )
-    let service = BrokerService(store: store, vaultAvailable: vaultAvailable)
     let invalidationObserver = GrantInvalidationObserver(service: service)
     let handler = BrokerXPCHandler(service: service)
     let delegate = BrokerListenerDelegate(handler: handler)

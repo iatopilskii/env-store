@@ -5,8 +5,8 @@ import EnvStoreStorage
 @preconcurrency import Foundation
 
 public final class BrokerService: Sendable {
-  private let store: EncryptedVaultStore?
-  private let vaultAvailable: Bool
+  private let storeProvider: @Sendable () -> EncryptedVaultStore?
+  private let vaultAvailabilityProvider: @Sendable () -> Bool
   private let grants: GrantCache
   private let executor: ProcessExecutor
   private let executions: ExecutionRegistry
@@ -18,8 +18,22 @@ public final class BrokerService: Sendable {
     executor: ProcessExecutor = ProcessExecutor(),
     executions: ExecutionRegistry = ExecutionRegistry()
   ) {
-    self.store = store
-    self.vaultAvailable = vaultAvailable
+    self.storeProvider = { store }
+    self.vaultAvailabilityProvider = { vaultAvailable }
+    self.grants = grants
+    self.executor = executor
+    self.executions = executions
+  }
+
+  public init(
+    storeProvider: @escaping @Sendable () -> EncryptedVaultStore?,
+    vaultAvailabilityProvider: @escaping @Sendable () -> Bool,
+    grants: GrantCache = GrantCache(),
+    executor: ProcessExecutor = ProcessExecutor(),
+    executions: ExecutionRegistry = ExecutionRegistry()
+  ) {
+    self.storeProvider = storeProvider
+    self.vaultAvailabilityProvider = vaultAvailabilityProvider
     self.grants = grants
     self.executor = executor
     self.executions = executions
@@ -40,6 +54,7 @@ public final class BrokerService: Sendable {
     do {
       switch request.operation {
       case .doctor:
+        let vaultAvailable = vaultAvailabilityProvider()
         return BrokerResponse(
           success: true,
           message: vaultAvailable
@@ -50,7 +65,7 @@ public final class BrokerService: Sendable {
         return BrokerResponse(
           success: true,
           context: BrokerContext(
-            vaultAvailable: vaultAvailable,
+            vaultAvailable: vaultAvailabilityProvider(),
             setNames: setNames,
             activeGrantCount: grants.summaries().count
           )
@@ -166,7 +181,7 @@ public final class BrokerService: Sendable {
   }
 
   private func resolveSet(for command: RunCommandPayload) async throws -> EnvironmentSet {
-    guard let store else {
+    guard let store = storeProvider() else {
       throw EnvStoreStorageError.vaultNotFound
     }
     return try await store.resolveSet(
@@ -182,7 +197,7 @@ public final class BrokerService: Sendable {
   private func resolveProfile(
     _ payload: ProfileRunPayload
   ) async throws -> EncryptedVaultStore.ResolvedProfile {
-    guard let store else { throw EnvStoreStorageError.vaultNotFound }
+    guard let store = storeProvider() else { throw EnvStoreStorageError.vaultNotFound }
     let resolved = try await store.resolveProfile(name: payload.name)
     let rootComponents = URL(fileURLWithPath: resolved.profile.projectRoot).pathComponents
     let workingComponents = URL(fileURLWithPath: payload.workingDirectory).pathComponents
