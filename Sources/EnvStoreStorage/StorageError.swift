@@ -5,4 +5,5 @@ public enum EnvStoreStorageError: Error, Equatable, Sendable {
     case databaseFailure(String)
     case invalidStoredData
     case setNotFound(UUID)
+    case vaultNotFound
 }

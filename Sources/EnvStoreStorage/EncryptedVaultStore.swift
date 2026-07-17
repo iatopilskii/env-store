@@ -31,7 +31,12 @@ public actor EncryptedVaultStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    public init(databaseURL: URL, rootKeyStore: any RootKeyStore) throws {
+    public init(
+        databaseURL: URL,
+        rootKeyStore: any RootKeyStore,
+        verifyRootKeyOnOpen: Bool = true,
+        allowCreatingVault: Bool = true
+    ) throws {
         let fileManager = FileManager.default
         let existed = fileManager.fileExists(atPath: databaseURL.path)
         let directory = databaseURL.deletingLastPathComponent()
@@ -41,10 +46,12 @@ public actor EncryptedVaultStore {
             attributes: [.posixPermissions: 0o700]
         )
 
-        if existed {
+        if existed, verifyRootKeyOnOpen {
             _ = try rootKeyStore.loadExisting(reason: "Unlock EnvStore vault")
-        } else {
+        } else if !existed, allowCreatingVault {
             _ = try rootKeyStore.createIfMissing(reason: "Create EnvStore vault")
+        } else if !existed {
+            throw EnvStoreStorageError.vaultNotFound
         }
 
         let connection = try SQLiteConnection(url: databaseURL)
