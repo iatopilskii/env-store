@@ -13,6 +13,7 @@ struct GrantCacheTests {
         _ = try cache.insert(
             command: command,
             setID: UUID(),
+            displaySetName: "Development",
             environment: ["TOKEN": "value"],
             expiresAt: now.addingTimeInterval(60),
             maximumUses: 1,
@@ -20,7 +21,9 @@ struct GrantCacheTests {
         )
 
         #expect(cache.consume(matching: sampleCommand(arguments: ["changed"]), now: now) == nil)
-        #expect(cache.consume(matching: command, now: now) == ["TOKEN": "value"])
+        let sameScopeNewExecution = sampleCommand(arguments: ["test"])
+        #expect(sameScopeNewExecution.executionID != command.executionID)
+        #expect(cache.consume(matching: sameScopeNewExecution, now: now) == ["TOKEN": "value"])
         #expect(cache.consume(matching: command, now: now) == nil)
     }
 
@@ -30,6 +33,7 @@ struct GrantCacheTests {
         _ = try cache.insert(
             command: sampleCommand(arguments: []),
             setID: UUID(),
+            displaySetName: "Development",
             environment: ["TOKEN": "never-returned"],
             expiresAt: now.addingTimeInterval(1),
             maximumUses: 2,
@@ -37,6 +41,24 @@ struct GrantCacheTests {
         )
 
         #expect(cache.summaries(now: now.addingTimeInterval(2)).isEmpty)
+    }
+
+    @Test
+    func revokeAllClearsCachedEnvironment() throws {
+        let cache = GrantCache()
+        _ = try cache.insert(
+            command: sampleCommand(arguments: []),
+            setID: UUID(),
+            displaySetName: "Development",
+            environment: ["TOKEN": "cleared"],
+            expiresAt: now.addingTimeInterval(60),
+            maximumUses: 2,
+            now: now
+        )
+
+        cache.revokeAll()
+
+        #expect(cache.summaries(now: now).isEmpty)
     }
 
     private func sampleCommand(arguments: [String]) -> RunCommandPayload {

@@ -76,4 +76,24 @@ public struct EnvelopeCipher: Sendable {
     ) throws -> VaultKey {
         try VaultKey(bytes: open(payload, using: wrappingKey, context: context))
     }
+
+    public func deriveDomainKey(
+        from rootKey: VaultKey,
+        vaultID: UUID,
+        kind: RecordKind
+    ) throws -> VaultKey {
+        let inputKey = rootKey.withUnsafeBytes(SymmetricKey.init(data:))
+        let salt = Data("envstore:v1:vault:\(vaultID.uuidString.lowercased())".utf8)
+        let info = Data("envstore:v1:domain:\(kind.rawValue)".utf8)
+        let derived = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: inputKey,
+            salt: salt,
+            info: info,
+            outputByteCount: VaultKey.byteCount
+        )
+        let bytes = derived.withUnsafeBytes { buffer in
+            Data(bytes: buffer.baseAddress!, count: buffer.count)
+        }
+        return try VaultKey(bytes: bytes)
+    }
 }

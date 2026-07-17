@@ -103,6 +103,26 @@ struct EnvelopeCipherTests {
         }
     }
 
+    @Test
+    func derivesDifferentKeysForMetadataDomains() throws {
+        let root = try VaultKey(bytes: Data(repeating: 0x77, count: 32))
+        let cipher = EnvelopeCipher()
+
+        let projects = try cipher.deriveDomainKey(
+            from: root,
+            vaultID: vaultID,
+            kind: .projectBinding
+        )
+        let profiles = try cipher.deriveDomainKey(
+            from: root,
+            vaultID: vaultID,
+            kind: .commandProfile
+        )
+
+        #expect(projects.bytesForTesting != profiles.bytesForTesting)
+        #expect(projects.bytesForTesting.count == 32)
+    }
+
     private func recordContext(kind: RecordKind) -> RecordContext {
         RecordContext(
             vaultID: vaultID,
@@ -112,4 +132,3 @@ struct EnvelopeCipherTests {
         )
     }
 }
-

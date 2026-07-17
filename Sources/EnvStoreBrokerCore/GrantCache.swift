@@ -18,6 +18,7 @@ public final class GrantCache: @unchecked Sendable {
     func insert(
         command: RunCommandPayload,
         setID: UUID,
+        displaySetName: String,
         environment: [String: String],
         expiresAt: Date,
         maximumUses: Int,
@@ -33,7 +34,7 @@ public final class GrantCache: @unchecked Sendable {
         let cached = CachedGrant(
             policy: policy,
             command: command,
-            setName: command.setName,
+            setName: displaySetName,
             environment: environment
         )
         lock.withLock { grants[policy.id] = cached }
@@ -47,7 +48,7 @@ public final class GrantCache: @unchecked Sendable {
         lock.withLock {
             removeExpired(at: now)
             for id in grants.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
-                guard var cached = grants[id], cached.command == command else {
+                guard var cached = grants[id], sameScope(cached.command, command) else {
                     continue
                 }
                 let candidate = commandRequest(for: command, setID: cached.policy.request.setID)
@@ -98,6 +99,13 @@ public final class GrantCache: @unchecked Sendable {
             executablePath: command.executablePath,
             arguments: command.arguments
         )
+    }
+
+    private func sameScope(_ first: RunCommandPayload, _ second: RunCommandPayload) -> Bool {
+        first.setName == second.setName
+            && first.workingDirectory == second.workingDirectory
+            && first.executablePath == second.executablePath
+            && first.arguments == second.arguments
     }
 
     private func summary(for cached: CachedGrant) -> GrantSummary {

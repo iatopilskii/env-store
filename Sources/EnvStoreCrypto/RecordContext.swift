@@ -1,7 +1,9 @@
 import Foundation
 
 public enum RecordKind: String, Codable, Sendable {
+    case commandProfile
     case profile
+    case projectBinding
     case revisionSnapshot
     case setManifest
     case variableValue

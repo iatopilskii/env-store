@@ -4,6 +4,16 @@ import EnvStoreCrypto
 import Foundation
 
 public actor EncryptedVaultStore {
+    public struct ManagerSnapshot: Sendable {
+        public let sets: [EnvironmentSet]
+        public let projectBindings: [ProjectBinding]
+        public let profiles: [CommandProfile]
+    }
+
+    public struct ResolvedProfile: Sendable {
+        public let profile: CommandProfile
+        public let set: EnvironmentSet
+    }
     private struct VariableHeader: Codable {
         let id: UUID
         let key: String
@@ -100,6 +110,117 @@ public actor EncryptedVaultStore {
 
     public func listSets() throws -> [EnvironmentSet] {
         let rootKey = try rootKeyStore.loadExisting(reason: "Unlock EnvStore vault")
+        return try listSets(using: rootKey)
+    }
+
+    public func loadManagerSnapshot() throws -> ManagerSnapshot {
+        let rootKey = try rootKeyStore.loadExisting(reason: "Unlock EnvStore vault")
+        let sets = try listSets(using: rootKey)
+        let bindings: [ProjectBinding] = try listSecureRecords(
+            kind: .projectBinding,
+            using: try domainKey(from: rootKey, kind: .projectBinding)
+        )
+        let profiles: [CommandProfile] = try listSecureRecords(
+            kind: .commandProfile,
+            using: try domainKey(from: rootKey, kind: .commandProfile)
+        )
+        return ManagerSnapshot(
+            sets: sets,
+            projectBindings: bindings.sorted {
+                $0.path.localizedStandardCompare($1.path) == .orderedAscending
+            },
+            profiles: profiles.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        )
+    }
+
+    public func listProjectBindings() throws -> [ProjectBinding] {
+        let rootKey = try rootKeyStore.loadExisting(reason: "Unlock EnvStore vault")
+        return try listSecureRecords(
+            kind: .projectBinding,
+            using: try domainKey(from: rootKey, kind: .projectBinding)
+        )
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    public func saveProjectBinding(_ binding: ProjectBinding) throws {
+        let rootKey = try rootKeyStore.loadExisting(reason: "Unlock EnvStore vault")
+        try saveSecureRecord(
+            binding,
+            id: binding.id,
+            kind: .projectBinding,
+            using: try domainKey(from: rootKey, kind: .projectBinding)
+        )
+    }
+
+    public func deleteProjectBinding(id: UUID) throws {
+        try deleteSecureRecord(id: id, kind: .projectBinding)
+    }
+
+    public func listCommandProfiles() throws -> [CommandProfile] {
+        let rootKey = try rootKeyStore.loadExisting(reason: "Unlock EnvStore vault")
+        return try listSecureRecords(
+            kind: .commandProfile,
+            using: try domainKey(from: rootKey, kind: .commandProfile)
+        )
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    public func saveCommandProfile(_ profile: CommandProfile) throws {
+        try profile.validate()
+        let rootKey = try rootKeyStore.loadExisting(reason: "Unlock EnvStore vault")
+        try saveSecureRecord(
+            profile,
+            id: profile.id,
+            kind: .commandProfile,
+            using: try domainKey(from: rootKey, kind: .commandProfile)
+        )
+    }
+
+    public func deleteCommandProfile(id: UUID) throws {
+        try deleteSecureRecord(id: id, kind: .commandProfile)
+    }
+
+    public func resolveSet(name: String?, workingDirectory: String) throws -> EnvironmentSet {
+        let rootKey = try rootKeyStore.loadExisting(reason: "Authorize command environment")
+        let sets = try listSets(using: rootKey)
+        if let name {
+            guard let set = sets.first(where: { $0.name == name }) else {
+                throw EnvStoreStorageError.setNotFound(UUID())
+            }
+            return set
+        }
+        let bindings: [ProjectBinding] = try listSecureRecords(
+            kind: .projectBinding,
+            using: try domainKey(from: rootKey, kind: .projectBinding)
+        )
+        guard let binding = ProjectBindingResolver().resolve(
+            workingDirectory: workingDirectory,
+            bindings: bindings
+        ), let set = sets.first(where: { $0.id == binding.setID }) else {
+            throw EnvStoreStorageError.projectNotLinked
+        }
+        return set
+    }
+
+    public func resolveProfile(name: String) throws -> ResolvedProfile {
+        let rootKey = try rootKeyStore.loadExisting(reason: "Authorize command profile")
+        let profiles: [CommandProfile] = try listSecureRecords(
+            kind: .commandProfile,
+            using: try domainKey(from: rootKey, kind: .commandProfile)
+        )
+        guard let profile = profiles.first(where: { $0.name == name }) else {
+            throw EnvStoreStorageError.profileNotFound
+        }
+        let sets = try listSets(using: rootKey)
+        guard let set = sets.first(where: { $0.id == profile.setID }) else {
+            throw EnvStoreStorageError.setNotFound(profile.setID)
+        }
+        return ResolvedProfile(profile: profile, set: set)
+    }
+
+    private func listSets(using rootKey: VaultKey) throws -> [EnvironmentSet] {
         let statement = try connection.prepare(
             "SELECT id, revision, wrapped_nonce, wrapped_ciphertext, wrapped_tag, manifest_nonce, manifest_ciphertext, manifest_tag FROM environment_sets"
         )
@@ -391,6 +512,67 @@ public actor EncryptedVaultStore {
         RecordContext(vaultID: vaultID, recordID: id, kind: kind, schemaVersion: 1)
     }
 
+    private func domainKey(from rootKey: VaultKey, kind: RecordKind) throws -> VaultKey {
+        try cipher.deriveDomainKey(from: rootKey, vaultID: vaultID, kind: kind)
+    }
+
+    private func saveSecureRecord<Value: Encodable>(
+        _ value: Value,
+        id: UUID,
+        kind: RecordKind,
+        using rootKey: VaultKey
+    ) throws {
+        let payload = try cipher.seal(
+            encoder.encode(value),
+            using: rootKey,
+            context: context(id: id, kind: kind)
+        )
+        let statement = try connection.prepare(
+            "INSERT INTO secure_records (id, record_kind, nonce, ciphertext, tag) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id, record_kind) DO UPDATE SET nonce = excluded.nonce, ciphertext = excluded.ciphertext, tag = excluded.tag"
+        )
+        try statement.bind(id.uuidString.lowercased(), at: 1)
+        try statement.bind(kind.rawValue, at: 2)
+        try bind(payload, to: statement, startingAt: 3)
+        _ = try statement.step()
+    }
+
+    private func listSecureRecords<Value: Decodable>(
+        kind: RecordKind,
+        using rootKey: VaultKey
+    ) throws -> [Value] {
+        let statement = try connection.prepare(
+            "SELECT id, nonce, ciphertext, tag FROM secure_records WHERE record_kind = ?"
+        )
+        try statement.bind(kind.rawValue, at: 1)
+        var values: [Value] = []
+        while try statement.step() {
+            guard let id = UUID(uuidString: try statement.text(at: 0)) else {
+                throw EnvStoreStorageError.invalidStoredData
+            }
+            let payload = SealedPayload(
+                nonce: statement.data(at: 1),
+                ciphertext: statement.data(at: 2),
+                tag: statement.data(at: 3)
+            )
+            let data = try cipher.open(
+                payload,
+                using: rootKey,
+                context: context(id: id, kind: kind)
+            )
+            values.append(try decoder.decode(Value.self, from: data))
+        }
+        return values
+    }
+
+    private func deleteSecureRecord(id: UUID, kind: RecordKind) throws {
+        let statement = try connection.prepare(
+            "DELETE FROM secure_records WHERE id = ? AND record_kind = ?"
+        )
+        try statement.bind(id.uuidString.lowercased(), at: 1)
+        try statement.bind(kind.rawValue, at: 2)
+        _ = try statement.step()
+    }
+
     private static func migrate(_ connection: SQLiteConnection) throws {
         try connection.transaction {
             try connection.execute(
@@ -404,6 +586,9 @@ public actor EncryptedVaultStore {
             )
             try connection.execute(
                 "CREATE TABLE IF NOT EXISTS revisions (set_id TEXT NOT NULL REFERENCES environment_sets(id) ON DELETE CASCADE, revision INTEGER NOT NULL, record_id TEXT NOT NULL, nonce BLOB NOT NULL, ciphertext BLOB NOT NULL, tag BLOB NOT NULL, PRIMARY KEY (set_id, revision))"
+            )
+            try connection.execute(
+                "CREATE TABLE IF NOT EXISTS secure_records (id TEXT NOT NULL, record_kind TEXT NOT NULL, nonce BLOB NOT NULL, ciphertext BLOB NOT NULL, tag BLOB NOT NULL, PRIMARY KEY (id, record_kind))"
             )
         }
     }

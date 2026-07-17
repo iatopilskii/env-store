@@ -34,7 +34,8 @@ public struct ProcessExecutor: Sendable {
     public func run(
         command: RunCommandPayload,
         injectedEnvironment: [String: String],
-        io: ProcessIO = .inherited
+        io: ProcessIO = .inherited,
+        onSpawn: @Sendable (pid_t) -> Void = { _ in }
     ) throws -> Int32 {
         guard command.executablePath.hasPrefix("/") else {
             throw ProcessExecutionError.executableMustBeAbsolute
@@ -81,9 +82,20 @@ public struct ProcessExecutor: Sendable {
             throw ProcessExecutionError.spawnFailed(changeDirectoryStatus)
         }
 
-        let flags = Int16(POSIX_SPAWN_SETPGROUP)
+        var defaultSignals = sigset_t()
+        sigemptyset(&defaultSignals)
+        for signalNumber in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] {
+            sigaddset(&defaultSignals, signalNumber)
+        }
+        var signalMask = sigset_t()
+        sigemptyset(&signalMask)
+        let flags = Int16(
+            POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK
+        )
         guard posix_spawnattr_setflags(&attributes, flags) == 0,
-              posix_spawnattr_setpgroup(&attributes, 0) == 0 else {
+              posix_spawnattr_setpgroup(&attributes, 0) == 0,
+              posix_spawnattr_setsigdefault(&attributes, &defaultSignals) == 0,
+              posix_spawnattr_setsigmask(&attributes, &signalMask) == 0 else {
             throw ProcessExecutionError.spawnFailed(EINVAL)
         }
 
@@ -103,6 +115,7 @@ public struct ProcessExecutor: Sendable {
         guard spawnStatus == 0 else {
             throw ProcessExecutionError.spawnFailed(spawnStatus)
         }
+        onSpawn(processID)
 
         var status: Int32 = 0
         while waitpid(processID, &status, 0) == -1 {

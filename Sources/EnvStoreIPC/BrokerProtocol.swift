@@ -11,28 +11,68 @@ public enum BrokerOperation: String, Codable, Sendable {
     case doctor
     case grantList
     case grantRequest
+    case profileGrantRequest
+    case profileRun
     case grantRevoke
     case run
+    case signal
+}
+
+public struct ProfileRunPayload: Codable, Equatable, Sendable {
+    public let executionID: UUID
+    public let name: String
+    public let workingDirectory: String
+
+    public init(executionID: UUID = UUID(), name: String, workingDirectory: String) {
+        self.executionID = executionID
+        self.name = name
+        self.workingDirectory = workingDirectory.standardizedAbsolutePath
+    }
+}
+
+public struct ProfileGrantPayload: Codable, Equatable, Sendable {
+    public let profile: ProfileRunPayload
+    public let expiresAt: Date?
+    public let maximumUses: Int?
+
+    public init(profile: ProfileRunPayload, expiresAt: Date? = nil, maximumUses: Int? = nil) {
+        self.profile = profile
+        self.expiresAt = expiresAt
+        self.maximumUses = maximumUses
+    }
 }
 
 public struct RunCommandPayload: Codable, Equatable, Sendable {
-    public let setName: String
+    public let executionID: UUID
+    public let setName: String?
     public let workingDirectory: String
     public let executablePath: String
     public let arguments: [String]
 
     public init(
-        setName: String,
+        executionID: UUID = UUID(),
+        setName: String?,
         workingDirectory: String,
         executablePath: String,
         arguments: [String]
     ) {
+        self.executionID = executionID
         self.setName = setName
         self.workingDirectory = workingDirectory.standardizedAbsolutePath
         self.executablePath = executablePath.hasPrefix("/")
             ? executablePath.standardizedAbsolutePath
             : executablePath
         self.arguments = arguments
+    }
+}
+
+public struct ProcessSignalPayload: Codable, Equatable, Sendable {
+    public let executionID: UUID
+    public let signal: Int32
+
+    public init(executionID: UUID, signal: Int32) {
+        self.executionID = executionID
+        self.signal = signal
     }
 }
 
@@ -53,20 +93,29 @@ public struct BrokerRequest: Codable, Equatable, Sendable {
     public let operation: BrokerOperation
     public let run: RunCommandPayload?
     public let grant: GrantRequestPayload?
+    public let profileRun: ProfileRunPayload?
+    public let profileGrant: ProfileGrantPayload?
     public let identifier: UUID?
+    public let processSignal: ProcessSignalPayload?
 
     public init(
         protocolVersion: Int = EnvStoreIPC.protocolVersion,
         operation: BrokerOperation,
         run: RunCommandPayload? = nil,
         grant: GrantRequestPayload? = nil,
-        identifier: UUID? = nil
+        profileRun: ProfileRunPayload? = nil,
+        profileGrant: ProfileGrantPayload? = nil,
+        identifier: UUID? = nil,
+        processSignal: ProcessSignalPayload? = nil
     ) {
         self.protocolVersion = protocolVersion
         self.operation = operation
         self.run = run
         self.grant = grant
+        self.profileRun = profileRun
+        self.profileGrant = profileGrant
         self.identifier = identifier
+        self.processSignal = processSignal
     }
 }
 

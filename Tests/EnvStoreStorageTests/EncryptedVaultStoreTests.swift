@@ -104,6 +104,34 @@ struct EncryptedVaultStoreTests {
         #expect(try await fixture.store.revisions(for: created.id).isEmpty)
     }
 
+    @Test
+    func encryptsProjectBindingsAndCommandProfiles() async throws {
+        let fixture = try VaultFixture()
+        let set = try await fixture.store.createSet(sampleDraft)
+        let binding = ProjectBinding(path: "/tmp/private-project", setID: set.id)
+        let profile = CommandProfile(
+            name: "Tests",
+            setID: set.id,
+            projectRoot: "/tmp/private-project",
+            executablePath: "/usr/bin/true",
+            arguments: [],
+            trustMode: .development
+        )
+
+        try await fixture.store.saveProjectBinding(binding)
+        try await fixture.store.saveCommandProfile(profile)
+
+        #expect(try await fixture.store.listProjectBindings() == [binding])
+        #expect(try await fixture.store.listCommandProfiles() == [profile])
+        #expect(try await fixture.store.resolveSet(name: nil, workingDirectory: "/tmp/private-project/src").id == set.id)
+
+        await fixture.store.close()
+        let raw = String(decoding: try Data(contentsOf: fixture.databaseURL), as: UTF8.self)
+        #expect(!raw.contains("private-project"))
+        #expect(!raw.contains("Tests"))
+        #expect(!raw.contains("/usr/bin/true"))
+    }
+
     private var sampleDraft: EnvironmentSetDraft {
         EnvironmentSetDraft(
             name: "Production",

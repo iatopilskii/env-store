@@ -3,6 +3,7 @@ import EnvStoreBrokerCore
 import EnvStoreCrypto
 import EnvStoreIPC
 import EnvStoreStorage
+import AppKit
 @preconcurrency import Foundation
 
 final class BrokerXPCHandler: NSObject, EnvStoreBrokerXPCProtocol {
@@ -57,6 +58,44 @@ private final class XPCReply: @unchecked Sendable {
     }
 }
 
+private final class GrantInvalidationObserver {
+    private let service: BrokerService
+    private var workspaceTokens: [NSObjectProtocol] = []
+    private var distributedTokens: [NSObjectProtocol] = []
+
+    init(service: BrokerService) {
+        self.service = service
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        for name in [
+            NSWorkspace.willSleepNotification,
+            NSWorkspace.sessionDidResignActiveNotification,
+        ] {
+            workspaceTokens.append(
+                workspaceCenter.addObserver(forName: name, object: nil, queue: nil) { [service] _ in
+                    service.revokeAllGrants()
+                }
+            )
+        }
+        let distributedCenter = DistributedNotificationCenter.default()
+        distributedTokens.append(
+            distributedCenter.addObserver(
+                forName: Notification.Name("com.apple.screenIsLocked"),
+                object: nil,
+                queue: nil
+            ) { [service] _ in
+                service.revokeAllGrants()
+            }
+        )
+    }
+
+    deinit {
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceTokens.forEach(workspaceCenter.removeObserver)
+        let distributedCenter = DistributedNotificationCenter.default()
+        distributedTokens.forEach(distributedCenter.removeObserver)
+    }
+}
+
 final class BrokerListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let handler: BrokerXPCHandler
 
@@ -95,12 +134,15 @@ enum EnvStoreBrokerMain {
             allowCreatingVault: false
         )
         let service = BrokerService(store: store, vaultAvailable: vaultAvailable)
+        let invalidationObserver = GrantInvalidationObserver(service: service)
         let handler = BrokerXPCHandler(service: service)
         let delegate = BrokerListenerDelegate(handler: handler)
         let listener = NSXPCListener(machServiceName: EnvStoreIPC.machServiceName)
         listener.delegate = delegate
         listener.resume()
-        RunLoop.current.run()
+        withExtendedLifetime(invalidationObserver) {
+            RunLoop.current.run()
+        }
     }
 }
 

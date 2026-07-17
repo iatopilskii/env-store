@@ -1,4 +1,6 @@
+import Darwin
 import EnvStoreIPC
+import Foundation
 import Testing
 @testable import EnvStoreBrokerCore
 
@@ -44,5 +46,29 @@ struct ProcessExecutorTests {
         #expect(throws: ProcessExecutionError.executableMustBeAbsolute) {
             try ProcessExecutor().run(command: command, injectedEnvironment: [:])
         }
+    }
+
+    @Test
+    func terminatesChildProcessGroupWhenSignalIsForwarded() throws {
+        let registry = ExecutionRegistry()
+        let executionID = UUID()
+        let command = RunCommandPayload(
+            executionID: executionID,
+            setName: "Test",
+            workingDirectory: "/tmp",
+            executablePath: "/bin/sleep",
+            arguments: ["10"]
+        )
+
+        let exitCode = try ProcessExecutor().run(
+            command: command,
+            injectedEnvironment: [:]
+        ) { processID in
+            registry.register(executionID: executionID, processID: processID)
+            usleep(50_000)
+            _ = registry.forward(signal: SIGTERM, to: executionID)
+        }
+
+        #expect(exitCode == 128 + SIGTERM)
     }
 }
