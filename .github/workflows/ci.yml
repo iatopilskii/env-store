@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+      - name: Toolchain
+        run: swift --version
+      - name: Test
+        run: swift test
+      - name: Build release products
+        run: swift build -c release

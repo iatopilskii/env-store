@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without v prefix
+        required: true
+        default: 0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: macos-26
+    env:
+      ENVSTORE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      ENVSTORE_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Normalize tag version
+        run: echo "ENVSTORE_VERSION=${ENVSTORE_VERSION#v}" >> "$GITHUB_ENV"
+      - name: Import Developer ID certificate
+        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/envstore-signing.keychain-db"
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "ENVSTORE_SIGN_IDENTITY=$DEVELOPER_ID_APPLICATION" >> "$GITHUB_ENV"
+      - name: Test
+        run: swift test
+      - name: Package app, CLI, and skill
+        run: scripts/package-release.sh
+      - name: Notarize signed DMG
+        if: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY != '' }}
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEY_PATH"
+          xcrun notarytool submit "dist/EnvStore-$ENVSTORE_VERSION.dmg" --key "$KEY_PATH" --key-id "$APP_STORE_CONNECT_KEY_ID" --issuer "$APP_STORE_CONNECT_ISSUER_ID" --wait
+          xcrun stapler staple "dist/EnvStore-$ENVSTORE_VERSION.dmg"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: EnvStore-${{ env.ENVSTORE_VERSION }}
+          path: |
+            dist/*.dmg
+            dist/*.tar.gz
+            dist/SHA256SUMS-*.txt
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.tar.gz dist/SHA256SUMS-*.txt --generate-notes --verify-tag

@@ -1,0 +1,4 @@
+interface:
+  display_name: "EnvStore Agent"
+  short_description: "Run local commands with scoped secret grants"
+  default_prompt: "Use $envstore to run this command with the smallest safe local secret grant."
