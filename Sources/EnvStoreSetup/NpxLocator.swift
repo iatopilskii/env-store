@@ -1,7 +1,18 @@
 import Foundation
 
 public struct NpxLocator: Sendable {
-  public init() {}
+  private let systemSearchDirectories: [URL]
+
+  public init() {
+    systemSearchDirectories = [
+      URL(filePath: "/opt/homebrew/bin", directoryHint: .isDirectory),
+      URL(filePath: "/usr/local/bin", directoryHint: .isDirectory),
+    ]
+  }
+
+  init(systemSearchDirectories: [URL]) {
+    self.systemSearchDirectories = systemSearchDirectories
+  }
 
   public func locate(homeDirectory: URL, pathEnvironment: String) -> URL? {
     candidates(homeDirectory: homeDirectory, pathEnvironment: pathEnvironment)
@@ -27,9 +38,8 @@ public struct NpxLocator: Sendable {
   private func candidates(homeDirectory: URL, pathEnvironment: String) -> [URL] {
     var urls = pathEnvironment.split(separator: ":", omittingEmptySubsequences: true)
       .map { URL(filePath: String($0)).appending(path: "npx") }
+    urls += systemSearchDirectories.map { $0.appending(path: "npx") }
     urls += [
-      URL(filePath: "/opt/homebrew/bin/npx"),
-      URL(filePath: "/usr/local/bin/npx"),
       homeDirectory.appending(path: ".volta/bin/npx"),
       homeDirectory.appending(path: ".asdf/shims/npx"),
       homeDirectory.appending(path: ".local/share/fnm/current/bin/npx"),

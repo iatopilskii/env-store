@@ -42,13 +42,16 @@ public struct LocalSetupConfiguration: Sendable {
 public struct LocalInstallationEngine: Sendable {
   private let configuration: LocalSetupConfiguration
   private let processRunner: any SetupProcessRunning
+  private let npxLocator: NpxLocator
 
   public init(
     configuration: LocalSetupConfiguration,
-    processRunner: any SetupProcessRunning = FoundationProcessRunner()
+    processRunner: any SetupProcessRunning = FoundationProcessRunner(),
+    npxLocator: NpxLocator = NpxLocator()
   ) {
     self.configuration = configuration
     self.processRunner = processRunner
+    self.npxLocator = npxLocator
   }
 
   public func installCommandLineTool(force: Bool = false) throws -> ComponentInstallationResult {
@@ -72,7 +75,8 @@ public struct LocalInstallationEngine: Sendable {
       version: configuration.version,
       processRunner: processRunner,
       manifestStore: configuration.manifestStore,
-      lockURL: configuration.lockURL
+      lockURL: configuration.lockURL,
+      npxLocator: npxLocator
     ).install(force: force)
   }
 

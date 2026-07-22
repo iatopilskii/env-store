@@ -212,7 +212,8 @@ struct InstallationTests {
     try fixture.makeDirectory(relativePath: ".claude")
     let sourceCLI = try fixture.makeExecutable(relativePath: "bundle/envstore")
     let engine = LocalInstallationEngine(
-      configuration: fixture.configuration(bundledCLIURL: sourceCLI)
+      configuration: fixture.configuration(bundledCLIURL: sourceCLI),
+      npxLocator: fixture.isolatedNpxLocator
     )
     let installed = try engine.installAgentSkill()
     #expect(installed.installedLocations.count == 2)
@@ -231,7 +232,8 @@ struct InstallationTests {
     let registrar = FakeBrokerRegistrar(status: .notRegistered, statusAfterRegistration: .enabled)
     let coordinator = InstallationCoordinator(
       localEngine: LocalInstallationEngine(
-        configuration: fixture.configuration(bundledCLIURL: sourceCLI)
+        configuration: fixture.configuration(bundledCLIURL: sourceCLI),
+        npxLocator: fixture.isolatedNpxLocator
       ),
       brokerRegistrar: registrar
     )
@@ -253,7 +255,8 @@ struct InstallationTests {
     let registrar = FakeBrokerRegistrar(status: .requiresApproval)
     let coordinator = InstallationCoordinator(
       localEngine: LocalInstallationEngine(
-        configuration: fixture.configuration(bundledCLIURL: sourceCLI)
+        configuration: fixture.configuration(bundledCLIURL: sourceCLI),
+        npxLocator: fixture.isolatedNpxLocator
       ),
       brokerRegistrar: registrar
     )
@@ -330,6 +333,9 @@ private struct SetupFixture {
   var canonicalSkill: URL {
     home.appending(path: ".agents/skills/envstore", directoryHint: .isDirectory)
   }
+  var isolatedNpxLocator: NpxLocator {
+    NpxLocator(systemSearchDirectories: [])
+  }
 
   init() throws {
     root = FileManager.default.temporaryDirectory
@@ -371,7 +377,8 @@ private struct SetupFixture {
       version: version,
       processRunner: processRunner,
       manifestStore: manifestStore,
-      lockURL: lockURL
+      lockURL: lockURL,
+      npxLocator: isolatedNpxLocator
     )
   }
 

@@ -12,7 +12,7 @@ public struct AgentSkillInstaller: Sendable {
   private let processRunner: any SetupProcessRunning
   private let manifestStore: InstallationManifestStore
   private let lockURL: URL
-  private let npxLocator = NpxLocator()
+  private let npxLocator: NpxLocator
   private let agentDetector = AgentDetector()
 
   public init(
@@ -24,7 +24,8 @@ public struct AgentSkillInstaller: Sendable {
     version: String,
     processRunner: any SetupProcessRunning = FoundationProcessRunner(),
     manifestStore: InstallationManifestStore,
-    lockURL: URL
+    lockURL: URL,
+    npxLocator: NpxLocator = NpxLocator()
   ) {
     self.agentSkillsRoot = agentSkillsRoot
     self.homeDirectory = homeDirectory
@@ -35,6 +36,7 @@ public struct AgentSkillInstaller: Sendable {
     self.processRunner = processRunner
     self.manifestStore = manifestStore
     self.lockURL = lockURL
+    self.npxLocator = npxLocator
   }
 
   public func install(force: Bool = false) throws -> ComponentInstallationResult {
