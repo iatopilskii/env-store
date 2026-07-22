@@ -29,6 +29,25 @@ struct GrantCacheTests {
   }
 
   @Test
+  func executableSearchPathIsPartOfTheGrantScope() throws {
+    let cache = GrantCache()
+    let grantedCommand = sampleCommand(arguments: ["test"], searchPath: ["/toolchain/one"])
+    _ = try cache.insert(
+      command: grantedCommand,
+      setID: UUID(),
+      displaySetName: "Development",
+      environment: ["TOKEN": "value"],
+      expiresAt: now.addingTimeInterval(60),
+      maximumUses: 1,
+      now: now
+    )
+
+    let changedPath = sampleCommand(arguments: ["test"], searchPath: ["/toolchain/two"])
+    #expect(cache.consume(matching: changedPath, now: now) == nil)
+    #expect(cache.consume(matching: grantedCommand, now: now) == ["TOKEN": "value"])
+  }
+
+  @Test
   func removesExpiredGrantWithoutReturningSecrets() throws {
     let cache = GrantCache()
     _ = try cache.insert(
@@ -62,12 +81,16 @@ struct GrantCacheTests {
     #expect(cache.summaries(now: now).isEmpty)
   }
 
-  private func sampleCommand(arguments: [String]) -> RunCommandPayload {
+  private func sampleCommand(
+    arguments: [String],
+    searchPath: [String]? = nil
+  ) -> RunCommandPayload {
     RunCommandPayload(
       setName: "Development",
       workingDirectory: "/tmp/project",
       executablePath: "/usr/bin/true",
-      arguments: arguments
+      arguments: arguments,
+      executableSearchPath: searchPath
     )
   }
 }

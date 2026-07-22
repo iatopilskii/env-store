@@ -1,9 +1,11 @@
 import Darwin
+import EnvStoreCore
 import EnvStoreIPC
 import Foundation
 
 public enum ProcessExecutionError: Error, Equatable, Sendable {
   case argumentListTooLarge
+  case descriptorDuplicationFailed(Int32)
   case executableMustBeAbsolute
   case executableNotFound
   case spawnFailed(Int32)
@@ -26,6 +28,46 @@ public struct ProcessIO: Sendable {
     standardOutput: STDOUT_FILENO,
     standardError: STDERR_FILENO
   )
+}
+
+public final class ProcessIOLease: @unchecked Sendable {
+  public let io: ProcessIO
+  private let descriptors: [Int32]
+
+  public init(duplicating source: ProcessIO) throws {
+    let descriptors = try Self.duplicateDescriptors(for: source)
+    self.descriptors = descriptors
+    io = ProcessIO(
+      standardInput: descriptors[0],
+      standardOutput: descriptors[1],
+      standardError: descriptors[2]
+    )
+  }
+
+  deinit {
+    for descriptor in descriptors {
+      Darwin.close(descriptor)
+    }
+  }
+
+  private static func duplicateDescriptors(for source: ProcessIO) throws -> [Int32] {
+    var duplicates: [Int32] = []
+    do {
+      for descriptor in [source.standardInput, source.standardOutput, source.standardError] {
+        let duplicate = Darwin.dup(descriptor)
+        guard duplicate >= 0 else {
+          throw ProcessExecutionError.descriptorDuplicationFailed(errno)
+        }
+        duplicates.append(duplicate)
+      }
+      return duplicates
+    } catch {
+      for descriptor in duplicates {
+        Darwin.close(descriptor)
+      }
+      throw error
+    }
+  }
 }
 
 public struct ProcessExecutor: Sendable {
@@ -54,6 +96,11 @@ public struct ProcessExecutor: Sendable {
     }
 
     var environment = ProcessInfo.processInfo.environment
+    if let requestedSearchPath = command.executableSearchPath {
+      environment["PATH"] = ExecutableSearchPath.normalized(
+        directories: requestedSearchPath
+      ).joined(separator: ":")
+    }
     for (key, value) in injectedEnvironment {
       environment[key] = value
     }

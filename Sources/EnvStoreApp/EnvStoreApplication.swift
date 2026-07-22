@@ -13,21 +13,28 @@ final class EnvStoreApplicationDelegate: NSObject, NSApplicationDelegate {
 struct EnvStoreApplication: App {
   @NSApplicationDelegateAdaptor(EnvStoreApplicationDelegate.self) private var appDelegate
   @StateObject private var model = VaultViewModel()
+  @StateObject private var setupModel = SetupViewModel()
+  @StateObject private var shellModel = AppShellModel()
   @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
 
   var body: some Scene {
     WindowGroup {
-      AppShellView(model: model)
+      AppShellView(model: model, setupModel: setupModel, shellModel: shellModel)
+        .environmentObject(shellModel)
         .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
-        .frame(minWidth: 960, minHeight: 640)
+        .frame(minWidth: 1080, minHeight: 700)
     }
-    .defaultSize(width: 1120, height: 720)
+    .defaultSize(width: 1240, height: 800)
     .windowStyle(.automatic)
 
     Settings {
-      SettingsView()
-        .frame(width: 520, height: 360)
+      SettingsView(setupModel: setupModel)
+        .environmentObject(shellModel)
+        .frame(width: 720, height: 650)
         .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+    }
+    .commands {
+      AppSidebarCommands(model: shellModel)
     }
   }
 }

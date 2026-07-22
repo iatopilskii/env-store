@@ -36,6 +36,49 @@ struct ProcessExecutorTests {
   }
 
   @Test
+  func suppliesTerminalExecutableSearchPathToTheChild() throws {
+    let command = RunCommandPayload(
+      setName: "Test",
+      workingDirectory: "/tmp",
+      executablePath: "/bin/sh",
+      arguments: ["-c", "test \"$PATH\" = /custom/bin:/usr/bin"],
+      executableSearchPath: ["/custom/bin", "/usr/bin"]
+    )
+
+    #expect(try ProcessExecutor().run(command: command, injectedEnvironment: [:]) == 0)
+  }
+
+  @Test
+  func duplicatedIOOutlivesTheOriginalFileHandle() throws {
+    let outputPipe = Pipe()
+    var ioLease: ProcessIOLease? = try ProcessIOLease(
+      duplicating: ProcessIO(
+        standardInput: STDIN_FILENO,
+        standardOutput: outputPipe.fileHandleForWriting.fileDescriptor,
+        standardError: STDERR_FILENO
+      )
+    )
+    try outputPipe.fileHandleForWriting.close()
+
+    let command = RunCommandPayload(
+      setName: "Test",
+      workingDirectory: "/tmp",
+      executablePath: "/bin/echo",
+      arguments: ["leased output"]
+    )
+    let exitCode = try ProcessExecutor().run(
+      command: command,
+      injectedEnvironment: [:],
+      io: ioLease!.io
+    )
+    ioLease = nil
+
+    let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    #expect(exitCode == 0)
+    #expect(String(decoding: output, as: UTF8.self) == "leased output\n")
+  }
+
+  @Test
   func rejectsRelativeExecutable() {
     let command = RunCommandPayload(
       setName: "Test",

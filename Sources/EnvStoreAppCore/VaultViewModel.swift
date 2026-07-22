@@ -3,6 +3,7 @@ import EnvStoreCore
 import EnvStoreCrypto
 import EnvStoreStorage
 import Foundation
+import Security
 
 public struct SafeActivityEvent: Identifiable, Equatable, Sendable {
   public enum Kind: String, Sendable {
@@ -306,10 +307,20 @@ public final class VaultViewModel: ObservableObject {
 
   private func friendlyMessage(for error: Error) -> String {
     switch error {
+    case EnvStoreCryptoError.authenticationCanceled:
+      "Authentication was canceled. The vault remains locked."
     case EnvStoreCryptoError.missingRootKey:
       "The vault key is missing. The encrypted database was preserved."
     case EnvStoreCryptoError.authenticationFailed:
       "A vault record failed authentication and was not opened."
+    case EnvStoreCryptoError.authenticationRejected:
+      "Authentication was not accepted. The vault remains locked."
+    case EnvStoreCryptoError.authenticationUnavailable:
+      "Touch ID or macOS password authentication is unavailable."
+    case EnvStoreCryptoError.keychainFailure(let status) where status == errSecMissingEntitlement:
+      "This build cannot access the Data Protection Keychain because its signing entitlement is missing."
+    case EnvStoreCryptoError.keychainFailure(let status):
+      keychainErrorMessage(status: status)
     case EnvironmentSetValidationError.emptyName:
       "Enter a name for this set."
     case EnvironmentSetValidationError.duplicateVariableKey(let key):
@@ -321,5 +332,12 @@ public final class VaultViewModel: ObservableObject {
     default:
       "EnvStore could not complete the operation."
     }
+  }
+
+  private func keychainErrorMessage(status: OSStatus) -> String {
+    let description =
+      (SecCopyErrorMessageString(status, nil) as String?)
+      ?? "Unknown Keychain error"
+    return "Keychain error \(status): \(description)"
   }
 }

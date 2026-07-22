@@ -91,6 +91,8 @@ EnvStore.app/Contents/
 
 The CLI is copied from `Contents/SharedSupport/envstore` to `~/.local/bin/envstore`. Setup creates `~/.local/bin` when absent and never changes shell startup files. The agent skill first tries `envstore` from `PATH` and then the stable absolute fallback `$HOME/.local/bin/envstore`.
 
+After CLI installation, setup checks whether the inherited process `PATH` contains `~/.local/bin`. When it does not, onboarding and Settings show a non-blocking terminal-access notice with a copyable, idempotent zsh command that adds the directory to `~/.zshrc`. The notice explicitly asks the user to open a new terminal afterward and remains available until the user confirms that configuration is complete. This is advisory because a GUI app cannot reliably determine the effective configuration of every interactive shell without evaluating shell profiles; EnvStore never evaluates or edits them.
+
 The app registers the broker from its own bundle using `SMAppService.agent(plistName:)`. The packaged LaunchAgent plist and helper executable are code-signature resources of the app bundle. The legacy `launchctl` path remains only for local development until the `SMAppService` path passes the complete physical-Mac smoke test.
 
 Registration is idempotent. Setup never registers a root daemon or privileged helper.
@@ -227,6 +229,7 @@ Automated tests never write to the developer's real agent directories.
 6. Skill failure never prevents vault use and always provides actionable recovery.
 7. Installed CLI and skill remain usable after the DMG is ejected.
 8. No installer path weakens secret handling, Gatekeeper, or existing agent instructions.
+9. When direct `envstore` command resolution may be unavailable, the GUI provides a safe manual PATH remediation without blocking agent-skill use.
 
 ## 15. Out of scope
 

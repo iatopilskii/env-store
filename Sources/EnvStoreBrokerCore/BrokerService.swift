@@ -104,7 +104,11 @@ public final class BrokerService: Sendable {
           return failure(.invalidRequest, "Profile grant payload is required")
         }
         let resolved = try await resolveProfile(payload.profile)
-        let command = command(for: resolved.profile, setName: resolved.set.name)
+        let command = command(
+          for: resolved.profile,
+          setName: resolved.set.name,
+          executableSearchPath: payload.profile.executableSearchPath
+        )
         let environment = Dictionary(
           uniqueKeysWithValues: resolved.set.variables.map { ($0.key, $0.value) }
         )
@@ -126,7 +130,8 @@ public final class BrokerService: Sendable {
         let command = command(
           for: resolved.profile,
           setName: resolved.set.name,
-          executionID: payload.executionID
+          executionID: payload.executionID,
+          executableSearchPath: payload.executableSearchPath
         )
         let environment =
           grants.consume(matching: command)
@@ -220,14 +225,16 @@ public final class BrokerService: Sendable {
   private func command(
     for profile: CommandProfile,
     setName: String,
-    executionID: UUID = UUID()
+    executionID: UUID = UUID(),
+    executableSearchPath: [String]? = nil
   ) -> RunCommandPayload {
     RunCommandPayload(
       executionID: executionID,
       setName: setName,
       workingDirectory: profile.projectRoot,
       executablePath: profile.executablePath,
-      arguments: profile.arguments
+      arguments: profile.arguments,
+      executableSearchPath: executableSearchPath
     )
   }
 

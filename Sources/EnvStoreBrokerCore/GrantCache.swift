@@ -97,7 +97,8 @@ public final class GrantCache: @unchecked Sendable {
       setID: setID,
       workingDirectory: command.workingDirectory,
       executablePath: command.executablePath,
-      arguments: command.arguments
+      arguments: command.arguments,
+      executableSearchPath: command.executableSearchPath
     )
   }
 
@@ -106,6 +107,7 @@ public final class GrantCache: @unchecked Sendable {
       && first.workingDirectory == second.workingDirectory
       && first.executablePath == second.executablePath
       && first.arguments == second.arguments
+      && first.executableSearchPath == second.executableSearchPath
   }
 
   private func summary(for cached: CachedGrant) -> GrantSummary {

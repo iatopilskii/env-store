@@ -16,68 +16,72 @@ struct DotenvInputSheet: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      header
-      Divider()
-      VStack(spacing: 16) {
-        TextEditor(text: $input)
-          .font(.system(size: 13, design: .monospaced))
-          .focused($editorFocused)
-          .scrollContentBackground(.hidden)
-          .padding(10)
-          .frame(minHeight: 210)
-          .envStorePanel()
-          .accessibilityLabel("Dotenv content")
-
+      AppSheetHeader(
+        title: "Import .env content",
+        subtitle: importedFileName
+          ?? "Values are parsed literally; shell syntax is never evaluated.",
+        dismiss: dismiss.callAsFunction
+      )
+      AppDivider()
+      HStack(alignment: .top, spacing: 16) {
+        editor
         preview
       }
       .padding(20)
-      Divider()
+      .background(AppColor.canvas)
+      AppDivider()
       footer
     }
-    .frame(width: 760, height: 640)
+    .frame(width: 860, height: 620)
+    .background(AppColor.canvas)
     .onAppear { editorFocused = true }
   }
 
-  private var header: some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 3) {
-        Text("Paste .env Content").font(.headline)
-        Text(importedFileName ?? "Values are parsed literally; shell syntax is never evaluated.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+  private var editor: some View {
+    VStack(spacing: 0) {
+      AppSectionHeader("Dotenv input") {
+        Button("Import File…", systemImage: "folder") { importFile() }
+          .buttonStyle(.envSecondary)
       }
-      Spacer()
-      Button("Import File…", systemImage: "folder") { importFile() }
-      Button {
-        dismiss()
-      } label: {
-        Image(systemName: "xmark").frame(width: 28, height: 28)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Close")
+      .padding(.horizontal, 14)
+      .frame(height: 46)
+      .background(AppColor.subtle)
+      AppDivider()
+      TextEditor(text: $input)
+        .font(.system(size: 12, design: .monospaced))
+        .focused($editorFocused)
+        .scrollContentBackground(.hidden)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AppColor.surface)
+        .accessibilityLabel("Dotenv content")
     }
-    .padding(20)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .envStorePanel()
   }
 
   private var preview: some View {
     VStack(spacing: 0) {
-      HStack {
-        Text("PREVIEW")
-          .font(.caption2.weight(.medium))
-          .foregroundStyle(.secondary)
-        Spacer()
-        Text("\(result.variables.count) parsed · \(result.errors.count) errors")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(result.errors.isEmpty ? Color.secondary : Color.red)
+      AppSectionHeader("Preview") {
+        AppStatusBadge(
+          text: result.errors.isEmpty
+            ? "\(result.variables.count) parsed"
+            : "\(result.errors.count) errors",
+          tone: result.errors.isEmpty ? .success : .danger
+        )
       }
-      .padding(.horizontal, 12)
-      .frame(height: 36)
-      Divider()
+      .padding(.horizontal, 14)
+      .frame(height: 46)
+      .background(AppColor.subtle)
+      AppDivider()
 
       if result.variables.isEmpty && result.issues.isEmpty {
-        Text("Parsed variables appear here as you type.")
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, minHeight: 140)
+        AppEmptyState(
+          title: "Live preview",
+          message: "Parsed variables and validation issues appear here as you type.",
+          symbol: "text.magnifyingglass"
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollView {
           LazyVStack(spacing: 0) {
@@ -86,18 +90,19 @@ struct DotenvInputSheet: View {
                 Text(variable.key)
                   .font(.system(.callout, design: .monospaced, weight: .medium))
                 Text(changeLabel(for: variable))
-                  .font(.caption2)
+                  .font(.system(size: 9, weight: .semibold))
+                  .foregroundStyle(.secondary)
                   .padding(.horizontal, 6)
-                  .padding(.vertical, 2)
-                  .background(.quaternary, in: Capsule())
+                  .frame(height: 20)
+                  .background(AppColor.subtle, in: Capsule())
                 Spacer()
                 Text("••••••••")
-                  .font(.system(.caption, design: .monospaced))
-                  .foregroundStyle(.secondary)
+                  .font(.system(size: 10, design: .monospaced))
+                  .foregroundStyle(.tertiary)
               }
-              .padding(.horizontal, 12)
-              .frame(minHeight: 34)
-              Divider().padding(.leading, 12)
+              .padding(.horizontal, 14)
+              .frame(minHeight: 38)
+              AppDivider()
             }
             ForEach(Array(result.issues.enumerated()), id: \.offset) { _, issue in
               HStack {
@@ -109,35 +114,38 @@ struct DotenvInputSheet: View {
                 )
                 Spacer()
               }
-              .font(.caption)
-              .foregroundStyle(issue.severity == .error ? .red : .secondary)
-              .padding(.horizontal, 12)
-              .frame(minHeight: 32)
+              .font(.system(size: 11))
+              .foregroundStyle(issue.severity == .error ? AppColor.danger : .secondary)
+              .padding(.horizontal, 14)
+              .frame(minHeight: 36)
             }
           }
         }
-        .frame(maxHeight: 190)
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .envStorePanel()
   }
 
   private var footer: some View {
     HStack {
       Label("$ and command substitutions remain literal", systemImage: "shield")
-        .font(.caption)
+        .font(.system(size: 11))
         .foregroundStyle(.secondary)
       Spacer()
       Button("Cancel") { dismiss() }
+        .buttonStyle(.envSecondary)
       Button("Apply \(result.variables.count) Variables") {
         apply(mergedVariables())
         dismiss()
       }
-      .buttonStyle(.borderedProminent)
+      .buttonStyle(.envPrimary)
       .disabled(result.variables.isEmpty || !result.errors.isEmpty)
       .keyboardShortcut(.return, modifiers: .command)
     }
-    .padding(16)
+    .padding(.horizontal, 20)
+    .frame(height: 64)
+    .background(AppColor.surface)
   }
 
   private func changeLabel(for variable: DotenvVariable) -> String {

@@ -2,6 +2,8 @@
 
 Use only these supported secret-execution paths:
 
+Resolve `envstore` from `PATH` first. If it is unavailable, use `$HOME/.local/bin/envstore`. The examples below use `envstore` as shorthand for that resolved executable.
+
 ```text
 envstore doctor [--json]
 envstore context [--json]

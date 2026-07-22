@@ -20,12 +20,30 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 mkdir -p "$APP_PATH/Contents/SharedSupport"
 mkdir -p "$APP_PATH/Contents/Library/LaunchServices"
+mkdir -p "$APP_PATH/Contents/Library/LaunchAgents"
 
 install -m 0755 "$BIN_DIRECTORY/EnvStoreApp" "$APP_PATH/Contents/MacOS/EnvStoreApp"
 install -m 0755 "$BIN_DIRECTORY/EnvStoreBroker" "$APP_PATH/Contents/Library/LaunchServices/EnvStoreBroker"
 install -m 0755 "$BIN_DIRECTORY/envstore" "$APP_PATH/Contents/SharedSupport/envstore"
 install -m 0644 "$PROJECT_DIRECTORY/Packaging/Info.plist" "$APP_PATH/Contents/Info.plist"
+install -m 0644 "$PROJECT_DIRECTORY/Packaging/dev.envstore.broker.plist" "$APP_PATH/Contents/Library/LaunchAgents/dev.envstore.broker.plist"
 install -m 0644 "$PROJECT_DIRECTORY/assets/brand/envstore-mark.svg" "$APP_PATH/Contents/Resources/envstore-mark.svg"
+
+REQUIRED_SKILL_FILES=(
+    "SKILL.md"
+    "agents/openai.yaml"
+    "references/cli.md"
+    "references/security.md"
+    "evals/adversarial.json"
+)
+for RELATIVE_PATH in "${REQUIRED_SKILL_FILES[@]}"; do
+    if [[ ! -f "$PROJECT_DIRECTORY/skills/envstore/$RELATIVE_PATH" ]]; then
+        echo "Required agent skill file is missing: skills/envstore/$RELATIVE_PATH" >&2
+        exit 1
+    fi
+done
+mkdir -p "$APP_PATH/Contents/Resources/AgentSkills"
+ditto "$PROJECT_DIRECTORY/skills/envstore" "$APP_PATH/Contents/Resources/AgentSkills/envstore"
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_PATH/Contents/Info.plist"

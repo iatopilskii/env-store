@@ -5,17 +5,20 @@ public struct CommandRequest: Codable, Equatable, Sendable {
   public let workingDirectory: String
   public let executablePath: String
   public let arguments: [String]
+  public let executableSearchPath: [String]?
 
   public init(
     setID: UUID,
     workingDirectory: String,
     executablePath: String,
-    arguments: [String]
+    arguments: [String],
+    executableSearchPath: [String]? = nil
   ) {
     self.setID = setID
     self.workingDirectory = workingDirectory.standardizedAbsolutePath
     self.executablePath = executablePath.standardizedAbsolutePath
     self.arguments = arguments
+    self.executableSearchPath = executableSearchPath
   }
 }
 

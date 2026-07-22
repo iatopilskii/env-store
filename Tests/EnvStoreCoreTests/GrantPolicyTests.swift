@@ -35,7 +35,7 @@ struct GrantPolicyTests {
   }
 
   @Test
-  func changedArgumentsDirectoryExecutableOrSetAreDenied() {
+  func changedArgumentsDirectoryExecutableSearchPathOrSetAreDenied() {
     let original = commandRequest()
     let grant = ExecutionGrant(
       request: original,
@@ -46,11 +46,13 @@ struct GrantPolicyTests {
     let changedArguments = original.replacing(arguments: ["test", "--watch"])
     let changedDirectory = original.replacing(workingDirectory: "/workspace/other")
     let changedExecutable = original.replacing(executablePath: "/usr/bin/env")
+    let changedSearchPath = original.replacing(executableSearchPath: ["/other/toolchain/bin"])
     let changedSet = original.replacing(setID: UUID())
 
     #expect(grant.authorization(for: changedArguments, at: now) == .denied(.grantScopeMismatch))
     #expect(grant.authorization(for: changedDirectory, at: now) == .denied(.grantScopeMismatch))
     #expect(grant.authorization(for: changedExecutable, at: now) == .denied(.grantScopeMismatch))
+    #expect(grant.authorization(for: changedSearchPath, at: now) == .denied(.grantScopeMismatch))
     #expect(grant.authorization(for: changedSet, at: now) == .denied(.grantScopeMismatch))
   }
 
@@ -80,7 +82,8 @@ struct GrantPolicyTests {
       setID: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
       workingDirectory: "/workspace/api",
       executablePath: "/usr/bin/npm",
-      arguments: ["test"]
+      arguments: ["test"],
+      executableSearchPath: ["/toolchain/bin", "/usr/bin"]
     )
   }
 }
@@ -90,13 +93,15 @@ extension CommandRequest {
     setID: UUID? = nil,
     workingDirectory: String? = nil,
     executablePath: String? = nil,
-    arguments: [String]? = nil
+    arguments: [String]? = nil,
+    executableSearchPath: [String]? = nil
   ) -> CommandRequest {
     CommandRequest(
       setID: setID ?? self.setID,
       workingDirectory: workingDirectory ?? self.workingDirectory,
       executablePath: executablePath ?? self.executablePath,
-      arguments: arguments ?? self.arguments
+      arguments: arguments ?? self.arguments,
+      executableSearchPath: executableSearchPath ?? self.executableSearchPath
     )
   }
 }

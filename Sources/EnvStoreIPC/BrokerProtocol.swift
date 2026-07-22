@@ -22,11 +22,18 @@ public struct ProfileRunPayload: Codable, Equatable, Sendable {
   public let executionID: UUID
   public let name: String
   public let workingDirectory: String
+  public let executableSearchPath: [String]?
 
-  public init(executionID: UUID = UUID(), name: String, workingDirectory: String) {
+  public init(
+    executionID: UUID = UUID(),
+    name: String,
+    workingDirectory: String,
+    executableSearchPath: [String]? = nil
+  ) {
     self.executionID = executionID
     self.name = name
     self.workingDirectory = workingDirectory.standardizedAbsolutePath
+    self.executableSearchPath = executableSearchPath
   }
 }
 
@@ -48,13 +55,15 @@ public struct RunCommandPayload: Codable, Equatable, Sendable {
   public let workingDirectory: String
   public let executablePath: String
   public let arguments: [String]
+  public let executableSearchPath: [String]?
 
   public init(
     executionID: UUID = UUID(),
     setName: String?,
     workingDirectory: String,
     executablePath: String,
-    arguments: [String]
+    arguments: [String],
+    executableSearchPath: [String]? = nil
   ) {
     self.executionID = executionID
     self.setName = setName
@@ -64,6 +73,7 @@ public struct RunCommandPayload: Codable, Equatable, Sendable {
       ? executablePath.standardizedAbsolutePath
       : executablePath
     self.arguments = arguments
+    self.executableSearchPath = executableSearchPath
   }
 }
 

@@ -22,27 +22,66 @@ final class BrokerXPCHandler: NSObject, EnvStoreBrokerXPCProtocol {
   ) {
     let service = service
     let requestData = request as Data
-    let io = ProcessIO(
+    let replyBox = XPCReply(reply)
+    let receivedIO = ProcessIO(
       standardInput: standardInput.fileDescriptor,
       standardOutput: standardOutput.fileDescriptor,
       standardError: standardError.fileDescriptor
     )
-    let replyBox = XPCReply(reply)
-    Task {
-      let response: BrokerResponse
-      do {
-        let decoded = try BrokerCodec.decode(BrokerRequest.self, from: requestData)
-        response = await service.handle(decoded, io: io)
-      } catch {
-        response = BrokerResponse(
-          success: false,
-          errorCode: .invalidRequest,
-          message: "Request could not be decoded"
-        )
-      }
-      let data = (try? BrokerCodec.encode(response)) ?? Data()
-      replyBox.send(data as NSData)
+    guard let ioLease = try? ProcessIOLease(duplicating: receivedIO) else {
+      let response = BrokerResponse(
+        success: false,
+        errorCode: .invalidRequest,
+        message: "Terminal streams could not be attached"
+      )
+      replyBox.send(
+        ((try? BrokerCodec.encode(response)) ?? Data()) as NSData
+      )
+      return
     }
+
+    let execution = XPCRequestExecution(
+      service: service,
+      requestData: requestData,
+      ioLease: ioLease,
+      reply: replyBox
+    )
+    Task { await execution.perform() }
+  }
+}
+
+private final class XPCRequestExecution: @unchecked Sendable {
+  private let service: BrokerService
+  private let requestData: Data
+  private let ioLease: ProcessIOLease
+  private let reply: XPCReply
+
+  init(
+    service: BrokerService,
+    requestData: Data,
+    ioLease: ProcessIOLease,
+    reply: XPCReply
+  ) {
+    self.service = service
+    self.requestData = requestData
+    self.ioLease = ioLease
+    self.reply = reply
+  }
+
+  func perform() async {
+    let response: BrokerResponse
+    do {
+      let decoded = try BrokerCodec.decode(BrokerRequest.self, from: requestData)
+      response = await service.handle(decoded, io: ioLease.io)
+    } catch {
+      response = BrokerResponse(
+        success: false,
+        errorCode: .invalidRequest,
+        message: "Request could not be decoded"
+      )
+    }
+    let data = (try? BrokerCodec.encode(response)) ?? Data()
+    reply.send(data as NSData)
   }
 }
 

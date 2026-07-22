@@ -16,6 +16,7 @@ let package = Package(
     .library(name: "EnvStoreIPC", targets: ["EnvStoreIPC"]),
     .library(name: "EnvStoreBrokerCore", targets: ["EnvStoreBrokerCore"]),
     .library(name: "EnvStoreAppCore", targets: ["EnvStoreAppCore"]),
+    .library(name: "EnvStoreSetup", targets: ["EnvStoreSetup"]),
     .executable(name: "envstore", targets: ["EnvStoreCLI"]),
     .executable(name: "EnvStoreBroker", targets: ["EnvStoreBroker"]),
     .executable(name: "EnvStoreApp", targets: ["EnvStoreApp"]),
@@ -48,9 +49,10 @@ let package = Package(
       dependencies: ["EnvStoreCore", "EnvStoreCrypto", "EnvStoreStorage", "EnvStoreIPC"],
       swiftSettings: strictSwiftSettings
     ),
+    .target(name: "EnvStoreSetup", swiftSettings: strictSwiftSettings),
     .executableTarget(
       name: "EnvStoreCLI",
-      dependencies: ["EnvStoreCore", "EnvStoreIPC"],
+      dependencies: ["EnvStoreCore", "EnvStoreIPC", "EnvStoreSetup"],
       swiftSettings: strictSwiftSettings
     ),
     .executableTarget(
@@ -60,7 +62,9 @@ let package = Package(
     ),
     .executableTarget(
       name: "EnvStoreApp",
-      dependencies: ["EnvStoreAppCore", "EnvStoreCore", "EnvStoreCrypto", "EnvStoreIPC"],
+      dependencies: [
+        "EnvStoreAppCore", "EnvStoreCore", "EnvStoreCrypto", "EnvStoreIPC", "EnvStoreSetup",
+      ],
       resources: [.copy("Resources")],
       swiftSettings: strictSwiftSettings
     ),
@@ -94,6 +98,11 @@ let package = Package(
     .testTarget(
       name: "EnvStoreAppCoreTests",
       dependencies: ["EnvStoreAppCore", "EnvStoreCore", "EnvStoreCrypto", "EnvStoreStorage"],
+      swiftSettings: strictSwiftSettings
+    ),
+    .testTarget(
+      name: "EnvStoreSetupTests",
+      dependencies: ["EnvStoreSetup"],
       swiftSettings: strictSwiftSettings
     ),
   ],

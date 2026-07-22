@@ -1,6 +1,7 @@
 import Darwin
 import EnvStoreCore
 import EnvStoreIPC
+import EnvStoreSetup
 @preconcurrency import Foundation
 
 private enum CLIError: Error, CustomStringConvertible {
@@ -38,6 +39,9 @@ enum EnvStoreCLI {
       print(EnvStoreCore.version)
       return 0
     }
+    if command == "setup" {
+      return try executeSetup(Array(arguments.dropFirst()))
+    }
 
     let json = arguments.contains("--json")
     let transport = XPCBrokerTransport()
@@ -61,7 +65,8 @@ enum EnvStoreCLI {
       }
       let payload = ProfileRunPayload(
         name: arguments[2],
-        workingDirectory: FileManager.default.currentDirectoryPath
+        workingDirectory: FileManager.default.currentDirectoryPath,
+        executableSearchPath: currentExecutableSearchPath()
       )
       writeError("EnvStore requests profile '\(payload.name)'.\n")
       response = try withSignalForwarding(executionID: payload.executionID) {
@@ -85,6 +90,48 @@ enum EnvStoreCLI {
     return response.exitCode ?? 0
   }
 
+  private static func executeSetup(_ arguments: [String]) throws -> Int32 {
+    guard arguments.first == "install-agent-skill" else {
+      throw CLIError.invalidArguments("use setup install-agent-skill --source PATH")
+    }
+    guard let source = try option("--source", in: arguments) else {
+      throw CLIError.invalidArguments("setup install-agent-skill requires --source PATH")
+    }
+
+    let fileManager = FileManager.default
+    let home = fileManager.homeDirectoryForCurrentUser
+    let applicationSupport = fileManager.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    )[0].appending(path: "EnvStore", directoryHint: .isDirectory)
+    let version = try option("--version", in: arguments) ?? EnvStoreCore.version
+    let installer = AgentSkillInstaller(
+      agentSkillsRoot: URL(filePath: source, directoryHint: .isDirectory),
+      homeDirectory: home,
+      temporaryDirectory: fileManager.temporaryDirectory,
+      applicationDirectories: [
+        URL(filePath: "/Applications", directoryHint: .isDirectory),
+        home.appending(path: "Applications", directoryHint: .isDirectory),
+      ],
+      pathEnvironment: ProcessInfo.processInfo.environment["PATH"] ?? "",
+      version: version,
+      manifestStore: InstallationManifestStore(
+        url: applicationSupport.appending(path: "installation.json")
+      ),
+      lockURL: applicationSupport.appending(path: "setup.lock")
+    )
+    let result = try installer.install(force: arguments.contains("--force"))
+    let output = result.state == .warning ? FileHandle.standardError : FileHandle.standardOutput
+    output.write(Data("\(result.detail)\n".utf8))
+    for location in result.installedLocations {
+      output.write(Data("Installed at \(location.path)\n".utf8))
+    }
+    if let recoveryCommand = result.recoveryCommand {
+      output.write(Data("Manual retry:\n\(recoveryCommand)\n".utf8))
+    }
+    return result.state == .installed ? 0 : 1
+  }
+
   private static func executeGrant(
     _ arguments: [String],
     transport: XPCBrokerTransport
@@ -106,7 +153,8 @@ enum EnvStoreCLI {
       if let profileName = try option("--profile", in: arguments) {
         let profile = ProfileRunPayload(
           name: profileName,
-          workingDirectory: FileManager.default.currentDirectoryPath
+          workingDirectory: FileManager.default.currentDirectoryPath,
+          executableSearchPath: currentExecutableSearchPath()
         )
         writeError(
           "EnvStore requests profile grant '\(profileName)'; ttl \(Int(ttl))s; uses \(uses).\n"
@@ -143,13 +191,15 @@ enum EnvStoreCLI {
       throw CLIError.invalidArguments("use -- before the executable")
     }
     let rawExecutable = arguments[separator + 1]
-    let executable = try resolveExecutable(rawExecutable)
+    let searchPath = currentExecutableSearchPath()
+    let executable = try resolveExecutable(rawExecutable, searchPath: searchPath)
     let commandArguments = Array(arguments.dropFirst(separator + 2))
     return RunCommandPayload(
       setName: setName,
       workingDirectory: FileManager.default.currentDirectoryPath,
       executablePath: executable,
-      arguments: commandArguments
+      arguments: commandArguments,
+      executableSearchPath: searchPath
     )
   }
 
@@ -194,14 +244,18 @@ enum EnvStoreCLI {
     return number
   }
 
-  private static func resolveExecutable(_ executable: String) throws -> String {
+  private static func currentExecutableSearchPath() -> [String] {
+    ExecutableSearchPath.normalized(from: ProcessInfo.processInfo.environment["PATH"])
+  }
+
+  private static func resolveExecutable(
+    _ executable: String,
+    searchPath: [String]
+  ) throws -> String {
     if executable.hasPrefix("/") {
       return executable.standardizedAbsolutePath
     }
-    let searchPaths =
-      ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":")
-      .map(String.init) ?? ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
-    for directory in searchPaths {
+    for directory in searchPath {
       let candidate = URL(fileURLWithPath: directory)
         .appending(path: executable)
         .standardizedFileURL.path
@@ -268,6 +322,7 @@ enum EnvStoreCLI {
       envstore grant request [--set NAME] [--ttl 5m] [--uses 1] -- EXECUTABLE [ARG...]
       envstore grant list [--json]
       envstore grant revoke UUID
+      envstore setup install-agent-skill --source PATH [--version VERSION] [--force]
     """
 }
 

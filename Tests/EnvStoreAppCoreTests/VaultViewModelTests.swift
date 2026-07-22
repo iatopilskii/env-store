@@ -8,6 +8,24 @@ import Testing
 @MainActor
 struct VaultViewModelTests {
   @Test
+  func reportsMissingKeychainEntitlement() async {
+    let databaseURL = FileManager.default.temporaryDirectory
+      .appending(path: "EnvStoreMissingEntitlement-\(UUID().uuidString).sqlite")
+    let model = VaultViewModel(
+      databaseURL: databaseURL,
+      rootKeyStore: FailingRootKeyStore(error: .keychainFailure(-34_018))
+    )
+
+    await model.unlock()
+
+    #expect(model.lockState == .locked)
+    #expect(
+      model.errorMessage
+        == "This build cannot access the Data Protection Keychain because its signing entitlement is missing."
+    )
+  }
+
+  @Test
   func unlocksCreatesUpdatesAndLocksWithoutRetainingSets() async throws {
     let model = try makeModel()
 
@@ -56,5 +74,17 @@ struct VaultViewModelTests {
       databaseURL: directory.appending(path: "vault.sqlite"),
       rootKeyStore: InMemoryRootKeyStore()
     )
+  }
+}
+
+private struct FailingRootKeyStore: RootKeyStore {
+  let error: EnvStoreCryptoError
+
+  func loadExisting(reason _: String) throws -> VaultKey {
+    throw error
+  }
+
+  func createIfMissing(reason _: String) throws -> VaultKey {
+    throw error
   }
 }

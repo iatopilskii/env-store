@@ -35,24 +35,30 @@ struct SetEditorSheet: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      header
-      Divider()
+      AppSheetHeader(
+        title: isEditing ? "Edit environment set" : "New environment set",
+        subtitle: "Values stay local and are encrypted before they reach disk.",
+        dismiss: dismiss.callAsFunction
+      )
+      AppDivider()
       ScrollView {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 24) {
           metadataFields
           variablesSection
           if let localError {
             Label(localError, systemImage: "exclamationmark.circle")
-              .font(.callout)
-              .foregroundStyle(.red)
+              .font(.system(size: 12, weight: .medium))
+              .foregroundStyle(AppColor.danger)
           }
         }
-        .padding(24)
+        .padding(28)
       }
-      Divider()
+      .background(AppColor.canvas)
+      AppDivider()
       footer
     }
-    .frame(width: 760, height: 620)
+    .frame(width: 780, height: 650)
+    .background(AppColor.canvas)
     .sheet(isPresented: $showingDotenvInput) {
       DotenvInputSheet(existing: variables) { parsed in
         variables = parsed
@@ -60,95 +66,84 @@ struct SetEditorSheet: View {
     }
   }
 
-  private var header: some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 3) {
-        Text(isEditing ? "Edit Set" : "New Environment Set")
-          .font(.headline)
-        Text("Values remain local and encrypted at rest.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button {
-        dismiss()
-      } label: {
-        Image(systemName: "xmark").frame(width: 28, height: 28)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Close")
-    }
-    .padding(20)
-  }
-
   private var metadataFields: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      LabeledContent("Name") {
-        TextField("Development", text: $name)
-          .textFieldStyle(.roundedBorder)
-          .frame(maxWidth: 460)
+    VStack(alignment: .leading, spacing: 16) {
+      AppSectionHeader("Set details") { EmptyView() }
+      VStack(spacing: 0) {
+        HStack(alignment: .center, spacing: 20) {
+          AppFieldLabel("Name", hint: "Used by the CLI and agent skill")
+            .frame(width: 190, alignment: .leading)
+          TextField("Development", text: $name)
+            .envStoreField()
+        }
+        .padding(16)
+        AppDivider()
+        HStack(alignment: .center, spacing: 20) {
+          AppFieldLabel("Note", hint: "Optional non-secret context")
+            .frame(width: 190, alignment: .leading)
+          TextField("Optional context; never put a secret here", text: $note)
+            .envStoreField()
+        }
+        .padding(16)
       }
-      LabeledContent("Note") {
-        TextField("Optional context; never put a secret here", text: $note)
-          .textFieldStyle(.roundedBorder)
-          .frame(maxWidth: 460)
-      }
+      .envStorePanel()
     }
   }
 
   private var variablesSection: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text("VARIABLES")
-          .font(.caption2.weight(.medium))
-          .foregroundStyle(.secondary)
+        AppSectionHeader("Environment variables", detail: "\(variables.count) total") {
+          EmptyView()
+        }
         Spacer()
         Button("Paste or Import .env…", systemImage: "doc.text") {
           showingDotenvInput = true
         }
+        .buttonStyle(.envSecondary)
         Button("Add Variable", systemImage: "plus") {
           variables.append(EnvironmentVariable(key: "", value: ""))
         }
+        .buttonStyle(.envSecondary)
       }
 
       VStack(spacing: 0) {
         if variables.isEmpty {
           VStack(spacing: 8) {
             Image(systemName: "text.badge.plus")
-            Text("Paste a .env file or add a variable.")
+              .font(.system(size: 18))
+            Text("Paste a .env file or add your first variable.")
+              .font(.system(size: 12))
           }
           .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, minHeight: 120)
+          .frame(maxWidth: .infinity, minHeight: 140)
         } else {
           ForEach(Array(variables.enumerated()), id: \.element.id) { index, variable in
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
               TextField(
                 "KEY",
                 text: binding(for: variable.id, keyPath: \.key)
               )
-              .font(.system(.body, design: .monospaced))
-              .textFieldStyle(.plain)
+              .font(.system(size: 12, weight: .medium, design: .monospaced))
+              .envStoreField()
               .accessibilityLabel("Variable name")
-              Divider().frame(height: 22)
               SecureField(
                 "Value",
                 text: binding(for: variable.id, keyPath: \.value)
               )
-              .font(.system(.body, design: .monospaced))
-              .textFieldStyle(.plain)
+              .font(.system(size: 12, design: .monospaced))
+              .envStoreField()
               .accessibilityLabel("Value for \(variable.key)")
               Button {
                 variables.removeAll { $0.id == variable.id }
               } label: {
-                Image(systemName: "minus.circle")
-                  .frame(width: 28, height: 28)
+                Image(systemName: "trash")
               }
-              .buttonStyle(.plain)
+              .buttonStyle(.envIcon)
               .accessibilityLabel("Remove \(variable.key.isEmpty ? "variable" : variable.key)")
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 42)
-            if index < variables.count - 1 { Divider() }
+            .padding(12)
+            if index < variables.count - 1 { AppDivider() }
           }
         }
       }
@@ -158,17 +153,20 @@ struct SetEditorSheet: View {
 
   private var footer: some View {
     HStack {
-      Text("⌘↩ saves")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
+      Label("Encrypted locally before storage", systemImage: "lock.shield")
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
       Spacer()
       Button("Cancel") { dismiss() }
+        .buttonStyle(.envSecondary)
       Button(isSaving ? "Saving…" : "Save") { submit() }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.envPrimary)
         .keyboardShortcut(.return, modifiers: .command)
         .disabled(isSaving)
     }
-    .padding(16)
+    .padding(.horizontal, 20)
+    .frame(height: 64)
+    .background(AppColor.surface)
   }
 
   private var isEditing: Bool {

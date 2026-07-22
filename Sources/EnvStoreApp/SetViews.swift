@@ -5,46 +5,139 @@ import EnvStoreAppCore
 import EnvStoreCore
 import SwiftUI
 
-struct SetListView: View {
+struct SetsWorkspaceView: View {
   @ObservedObject var model: VaultViewModel
   @Binding var showingCreateSet: Bool
 
   var body: some View {
-    List(selection: $model.selectedSetID) {
-      ForEach(model.sets) { set in
-        VStack(alignment: .leading, spacing: 3) {
-          Text(set.name)
-            .lineLimit(1)
-          Text("\(set.variables.count) variables")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-        }
-        .tag(set.id)
-        .accessibilityElement(children: .combine)
-      }
-    }
-    .overlay {
-      if model.sets.isEmpty {
-        ContentUnavailableView(
-          "No Environment Sets",
-          systemImage: "key.horizontal",
-          description: Text("Create a set or paste a .env file to begin.")
-        )
-      }
-    }
-    .navigationTitle("Sets")
-    .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button {
+    VStack(spacing: 0) {
+      AppPageHeader(
+        "Environment Sets",
+        subtitle: "Encrypted variables grouped by project or workflow."
+      ) {
+        Button("New Set", systemImage: "plus") {
           showingCreateSet = true
-        } label: {
-          Label("New Set", systemImage: "plus")
         }
+        .buttonStyle(.envPrimary)
         .help("New Set (⌘N)")
         .keyboardShortcut("n", modifiers: .command)
       }
+
+      HStack(spacing: 0) {
+        SetListView(model: model)
+          .frame(width: 286)
+
+        Rectangle()
+          .fill(AppColor.border)
+          .frame(width: AppMetrics.hairline)
+
+        Group {
+          if let set = model.selectedSet {
+            SetDetailView(model: model, set: set)
+              .id(set.id.uuidString + "-\(set.revision)")
+          } else {
+            AppEmptyState(
+              title: "Select an environment set",
+              message: "Choose a set to inspect variables, revisions, and export options.",
+              symbol: "key.horizontal"
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
+        }
+        .background(AppColor.canvas)
+      }
     }
+    .background(AppColor.canvas)
+  }
+}
+
+struct SetListView: View {
+  @ObservedObject var model: VaultViewModel
+  @State private var query = ""
+
+  var body: some View {
+    VStack(spacing: 0) {
+      searchField
+      AppDivider()
+
+      if filteredSets.isEmpty {
+        AppEmptyState(
+          title: query.isEmpty ? "No environment sets" : "No matching sets",
+          message: query.isEmpty
+            ? "Create a set or paste a .env file to begin."
+            : "Try a different search term.",
+          symbol: query.isEmpty ? "key.horizontal" : "magnifyingglass"
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ScrollView {
+          LazyVStack(spacing: 0) {
+            ForEach(filteredSets) { set in
+              setButton(set)
+              AppDivider()
+            }
+          }
+        }
+      }
+    }
+    .background(AppColor.surface)
+  }
+
+  private var searchField: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass")
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.tertiary)
+      TextField("Search sets", text: $query)
+        .textFieldStyle(.plain)
+        .font(.system(size: 12))
+    }
+    .padding(.horizontal, 10)
+    .frame(height: 32)
+    .background(AppColor.subtle)
+    .clipShape(RoundedRectangle(cornerRadius: AppMetrics.cornerRadius))
+    .padding(12)
+  }
+
+  private func setButton(_ set: EnvironmentSet) -> some View {
+    let selected = model.selectedSetID == set.id
+    return Button {
+      model.selectedSetID = set.id
+    } label: {
+      HStack(spacing: 11) {
+        Rectangle()
+          .fill(selected ? Color.primary : Color.clear)
+          .frame(width: 2, height: 30)
+        VStack(alignment: .leading, spacing: 5) {
+          Text(set.name)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+          HStack(spacing: 5) {
+            Text("\(set.variables.count) variables")
+            Text("·")
+            Text("rev \(set.revision)")
+          }
+          .font(.system(size: 10).monospacedDigit())
+          .foregroundStyle(.secondary)
+        }
+        Spacer()
+        Image(systemName: "chevron.right")
+          .font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(selected ? .secondary : .tertiary)
+      }
+      .padding(.horizontal, 12)
+      .frame(height: 60)
+      .contentShape(Rectangle())
+      .background(selected ? AppColor.subtle : Color.clear)
+    }
+    .buttonStyle(.plain)
+    .accessibilityElement(children: .combine)
+  }
+
+  private var filteredSets: [EnvironmentSet] {
+    guard !query.isEmpty else { return model.sets }
+    return model.sets.filter { $0.name.localizedCaseInsensitiveContains(query) }
   }
 }
 
@@ -61,18 +154,15 @@ struct SetDetailView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         header
+        metadata
         variablePanel
-        if !set.note.isEmpty {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("NOTE").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-            Text(set.note).textSelection(.enabled)
-          }
-        }
+        if !set.note.isEmpty { notePanel }
       }
-      .padding(28)
+      .frame(maxWidth: 920, alignment: .leading)
+      .padding(AppMetrics.pageHorizontalPadding)
+      .frame(maxWidth: .infinity, alignment: .topLeading)
     }
-    .navigationTitle(set.name)
-    .toolbar { toolbarContent }
+    .background(AppColor.canvas)
     .sheet(isPresented: $showingEditor) {
       SetEditorSheet(mode: .edit(set)) { draft in
         await model.update(id: set.id, draft: draft)
@@ -101,87 +191,138 @@ struct SetDetailView: View {
   }
 
   private var header: some View {
-    HStack(alignment: .top) {
-      VStack(alignment: .leading, spacing: 6) {
-        Text(set.name)
-          .font(.system(size: 25, weight: .semibold))
-        HStack(spacing: 12) {
-          Label("Revision \(set.revision)", systemImage: "clock.arrow.circlepath")
-          Text("Updated \(set.updatedAt, style: .relative)")
+    HStack(alignment: .top, spacing: 20) {
+      VStack(alignment: .leading, spacing: 7) {
+        HStack(spacing: 9) {
+          Text(set.name)
+            .font(.system(size: 24, weight: .semibold))
+          AppStatusBadge(text: "Encrypted", tone: .success)
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .monospacedDigit()
+        Text("Manage values, inspect revisions, or export a guarded plaintext copy.")
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
       }
-      Spacer()
-      Button("Edit") { showingEditor = true }
-        .buttonStyle(.bordered)
-        .keyboardShortcut("e", modifiers: .command)
+      Spacer(minLength: 20)
+      HStack(spacing: 8) {
+        Button("Edit", systemImage: "pencil") { showingEditor = true }
+          .buttonStyle(.envSecondary)
+          .keyboardShortcut("e", modifiers: .command)
+        actionsMenu
+      }
     }
+  }
+
+  private var actionsMenu: some View {
+    Menu {
+      Button("Revision History", systemImage: "clock.arrow.circlepath") {
+        showingRevisions = true
+      }
+      Button("Duplicate", systemImage: "plus.square.on.square") {
+        Task { _ = await model.duplicate(id: set.id) }
+      }
+      Button("Export .env…", systemImage: "square.and.arrow.up") {
+        exportSet()
+      }
+      Divider()
+      Button("Delete Set…", systemImage: "trash", role: .destructive) {
+        showingDeleteConfirmation = true
+      }
+    } label: {
+      Image(systemName: "ellipsis")
+        .frame(width: AppMetrics.controlHeight, height: AppMetrics.controlHeight)
+        .background(AppColor.surface)
+        .clipShape(RoundedRectangle(cornerRadius: AppMetrics.cornerRadius))
+        .overlay {
+          RoundedRectangle(cornerRadius: AppMetrics.cornerRadius)
+            .stroke(AppColor.border, lineWidth: AppMetrics.hairline)
+        }
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .help("More Actions")
+  }
+
+  private var metadata: some View {
+    HStack(spacing: 0) {
+      metadataItem("Variables", value: "\(set.variables.count)")
+      AppDivider(.vertical).frame(height: 42)
+      metadataItem("Revision", value: "\(set.revision)")
+      AppDivider(.vertical).frame(height: 42)
+      metadataItem("Updated", value: set.updatedAt.formatted(date: .abbreviated, time: .shortened))
+    }
+    .padding(.vertical, 12)
+    .envStorePanel()
+  }
+
+  private func metadataItem(_ title: String, value: String) -> some View {
+    VStack(alignment: .leading, spacing: 5) {
+      Text(title.uppercased())
+        .font(.system(size: 9, weight: .semibold))
+        .tracking(0.4)
+        .foregroundStyle(.tertiary)
+      Text(value)
+        .font(.system(size: 12, weight: .medium).monospacedDigit())
+        .lineLimit(1)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, 16)
   }
 
   private var variablePanel: some View {
     VStack(spacing: 0) {
-      HStack {
-        Text("ENVIRONMENT VARIABLES")
-          .font(.caption2.weight(.medium))
-          .foregroundStyle(.secondary)
-        Spacer()
-        Text("\(set.variables.count)")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(.secondary)
+      AppSectionHeader(
+        "Environment variables",
+        detail: "\(set.variables.count) total"
+      ) {
+        Text("Values hidden by default")
+          .font(.system(size: 10))
+          .foregroundStyle(.tertiary)
       }
-      .padding(.horizontal, 14)
-      .frame(height: 38)
+      .padding(.horizontal, 16)
+      .frame(height: 42)
+      .background(AppColor.subtle)
 
-      Divider()
-      ForEach(Array(set.variables.enumerated()), id: \.element.id) { index, variable in
-        VariableRow(
-          variable: variable,
-          revealed: revealedIDs.contains(variable.id),
-          onReveal: { toggleReveal(variable) },
-          onCopy: { copy(variable) }
+      AppDivider()
+
+      if set.variables.isEmpty {
+        AppEmptyState(
+          title: "No variables",
+          message: "Edit this set to add values or paste .env content.",
+          symbol: "text.badge.plus"
         )
-        if index < set.variables.count - 1 {
-          Divider().padding(.leading, 14)
+        .frame(maxWidth: .infinity, minHeight: 190)
+      } else {
+        ForEach(Array(set.variables.enumerated()), id: \.element.id) { index, variable in
+          VariableRow(
+            variable: variable,
+            revealed: revealedIDs.contains(variable.id),
+            onReveal: { toggleReveal(variable) },
+            onCopy: { copy(variable) }
+          )
+          if index < set.variables.count - 1 {
+            AppDivider()
+          }
         }
       }
     }
     .envStorePanel()
   }
 
-  @ToolbarContentBuilder
-  private var toolbarContent: some ToolbarContent {
-    ToolbarItemGroup(placement: .primaryAction) {
-      Button {
-        showingRevisions = true
-      } label: {
-        Label("Revisions", systemImage: "clock.arrow.circlepath")
-      }
-      .help("Revision History")
-
-      Menu {
-        Button("Duplicate", systemImage: "plus.square.on.square") {
-          Task { _ = await model.duplicate(id: set.id) }
-        }
-        Button("Export .env…", systemImage: "square.and.arrow.up") {
-          exportSet()
-        }
-        Divider()
-        Button("Delete Set…", systemImage: "trash", role: .destructive) {
-          showingDeleteConfirmation = true
-        }
-      } label: {
-        Label("More", systemImage: "ellipsis")
-      }
-      .help("More Actions")
+  private var notePanel: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      AppSectionHeader("Note") { EmptyView() }
+      Text(set.note)
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
     }
+    .padding(16)
+    .envStorePanel()
   }
 
   private func toggleReveal(_ variable: EnvironmentVariable) {
-    if revealedIDs.remove(variable.id) != nil {
-      return
-    }
+    if revealedIDs.remove(variable.id) != nil { return }
     revealedIDs.insert(variable.id)
     model.recordReveal(setName: set.name, key: variable.key)
     Task {
@@ -197,7 +338,7 @@ struct SetDetailView: View {
 
   private func exportSet() {
     let panel = NSSavePanel()
-    panel.nameFieldStringValue = "\(set.name.replacingOccurrences(of: " ", with: "-" )).env"
+    panel.nameFieldStringValue = "\(set.name.replacingOccurrences(of: " ", with: "-")).env"
     panel.canCreateDirectories = true
     panel.isExtensionHidden = false
     panel.message = "Choose a new file. EnvStore never overwrites an existing plaintext file."
@@ -231,20 +372,19 @@ private struct VariableRow: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 6) {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 7) {
           Text(variable.key)
-            .font(.system(.body, design: .monospaced, weight: .medium))
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
             .textSelection(.enabled)
           if EnvironmentKeyRisk.classify(variable.key) != nil {
-            Image(systemName: "exclamationmark.triangle")
-              .foregroundStyle(.secondary)
+            AppStatusBadge(text: "Sensitive", tone: .warning)
               .accessibilityLabel("High-risk environment key")
           }
         }
-        Text(revealed ? variable.value : "••••••••••••")
-          .font(.system(.callout, design: .monospaced))
-          .foregroundStyle(revealed ? .primary : .secondary)
+        Text(revealed ? variable.value : "••••••••••••••••")
+          .font(.system(size: 11, design: .monospaced))
+          .foregroundStyle(revealed ? .primary : .tertiary)
           .lineLimit(revealed ? 4 : 1)
           .textSelection(.enabled)
           .accessibilityLabel(revealed ? "Value \(variable.value)" : "Value hidden")
@@ -252,20 +392,18 @@ private struct VariableRow: View {
       Spacer(minLength: 12)
       Button(action: onReveal) {
         Image(systemName: revealed ? "eye.slash" : "eye")
-          .frame(width: 28, height: 28)
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.envIcon)
       .accessibilityLabel(
         revealed ? "Hide \(variable.key)" : "Reveal \(variable.key) for 15 seconds")
       Button(action: onCopy) {
         Image(systemName: "doc.on.doc")
-          .frame(width: 28, height: 28)
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.envIcon)
       .accessibilityLabel("Copy \(variable.key); clipboard clears after 30 seconds")
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 11)
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
   }
 }
 

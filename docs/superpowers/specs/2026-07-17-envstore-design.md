@@ -80,7 +80,7 @@ No root daemon or privileged helper is required. The broker runs for the logged-
 3. The broker validates the protocol version, current UID, peer code signature where available, normalized directory, project binding, executable path, argument policy, and grant.
 4. If no matching grant exists, the broker asks `EnvStoreApp` to present an approval surface showing the exact executable, arguments, directory, set name, variable names, expiry, and use count. Values remain hidden. If the app is not running, the broker launches it through LaunchServices and waits with a bounded timeout.
 5. After the user chooses an allow action, the broker requests the Keychain item with a fresh LocalAuthentication context. macOS presents the Touch ID/password prompt and returns only the authorization result.
-6. The broker obtains the root key from the Data Protection Keychain, unwraps only the selected set data key, and immediately clears the root key.
+6. The broker obtains the root key from the selected local Keychain backend, unwraps only the selected set data key, and immediately clears the root key.
 7. The broker decrypts the selected values into guarded buffers, builds a NUL-terminated environment, and calls `posix_spawn` with an absolute executable path and explicit argv.
 8. stdin, stdout, and stderr are attached to the invoking terminal through XPC file descriptors. The CLI forwards signals to the broker-managed process group.
 9. Spawn buffers are cleared immediately after process creation. A cached set data key remains only for the exact active grant.
@@ -93,10 +93,10 @@ Normal execution never invokes `/bin/sh -c`. A user can explicitly run a shell e
 ### 7.1 Root key
 
 - A random 256-bit root key is created once.
-- It is stored in the macOS Data Protection Keychain with `kSecUseDataProtectionKeychain = true`.
-- Accessibility is `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
-- Access control requires `userPresence`, allowing Touch ID or the macOS password.
-- Synchronization is disabled. The item never migrates to another Mac.
+- Provisioned builds store it in the macOS Data Protection Keychain with `kSecUseDataProtectionKeychain = true`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, disabled synchronization, and `userPresence`.
+- Ad-hoc previews cannot access the Data Protection Keychain because they have no provisioned application identifier. They use the local login Keychain default ACL and require a fresh LocalAuthentication device-owner check before every read.
+- The preview authentication check and file-based Keychain ACL are separate controls. This is a development limitation, not production-equivalent item-level biometric protection.
+- Neither backend synchronizes the item to another Mac.
 - A missing Keychain item never causes automatic creation over an existing vault.
 
 ### 7.2 Envelope encryption
@@ -336,7 +336,7 @@ A `vX.Y.Z` tag triggers GitHub Actions to build and test a universal macOS artif
 - `envstore-agent-X.Y.Z.tar.gz`
 - `SHA256SUMS`
 
-Unsigned builds display a persistent preview warning and do not enable silent auto-update. When signing credentials are configured, the same workflow signs every nested executable with hardened runtime, notarizes with `notarytool`, staples the ticket, validates Gatekeeper, publishes the signed DMG, and emits a signed Sparkle appcast.
+Unsigned builds display a persistent preview warning and do not enable silent auto-update. Moving to the production Data Protection Keychain backend additionally requires provisioned application identifiers for every process that unwraps keys and an explicit preview-key migration. The signed workflow then signs every nested executable with hardened runtime, notarizes with `notarytool`, staples the ticket, validates Gatekeeper, publishes the signed DMG, and emits a signed Sparkle appcast.
 
 ## 21. Implementation sequence
 

@@ -1,15 +1,24 @@
-import AppKit
 import EnvStoreAppCore
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
-  case sets = "Sets"
+  case sets = "Environment Sets"
   case projects = "Projects"
-  case profiles = "Profiles"
+  case profiles = "Command Profiles"
   case activity = "Activity"
   case settings = "Settings"
 
   var id: String { rawValue }
+
+  var navigationTitle: String {
+    switch self {
+    case .sets: "Sets"
+    case .projects: "Projects"
+    case .profiles: "Profiles"
+    case .activity: "Activity"
+    case .settings: "Settings"
+    }
+  }
 
   var symbol: String {
     switch self {
@@ -24,16 +33,25 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct AppShellView: View {
   @ObservedObject var model: VaultViewModel
-  @State private var section: AppSection? = .sets
+  @ObservedObject var setupModel: SetupViewModel
+  @ObservedObject var shellModel: AppShellModel
+  @State private var section = AppSection.sets
   @State private var showingCreateSet = false
 
   var body: some View {
     Group {
-      if model.lockState == .unlocked {
+      if setupModel.shouldPresentOnboarding {
+        FirstRunSetupView(model: setupModel)
+      } else if model.lockState == .unlocked {
         unlockedContent
       } else {
         LockView(model: model)
       }
+    }
+    .background(AppColor.canvas)
+    .background {
+      WindowChromeConfigurator()
+        .frame(width: 0, height: 0)
     }
     .alert("EnvStore", isPresented: errorIsPresented) {
       Button("OK") { model.clearError() }
@@ -57,38 +75,25 @@ struct AppShellView: View {
   }
 
   private var unlockedContent: some View {
-    NavigationSplitView {
-      VStack(spacing: 0) {
-        HStack(spacing: 10) {
-          BrandMark(size: 28)
-          Text("EnvStore")
-            .font(.system(size: 15, weight: .semibold))
-          Spacer()
-        }
-        .padding(12)
+    HStack(spacing: 0) {
+      if shellModel.isSidebarVisible {
+        HStack(spacing: 0) {
+          sidebar
+            .frame(width: AppMetrics.sidebarWidth)
 
-        List(AppSection.allCases, selection: $section) { item in
-          Label(item.rawValue, systemImage: item.symbol)
-            .tag(item)
+          Rectangle()
+            .fill(AppColor.border)
+            .frame(width: AppMetrics.hairline)
         }
-        .listStyle(.sidebar)
-
-        Button {
-          Task { await model.lock() }
-        } label: {
-          Label("Lock Vault", systemImage: "lock")
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .padding(14)
-        .keyboardShortcut("l", modifiers: [.command, .shift])
+        .transition(.move(edge: .leading).combined(with: .opacity))
       }
-      .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 250)
-    } content: {
+
       sectionContent
-    } detail: {
-      sectionDetail
+        .environment(\.showsAppSidebarControl, true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+    .background(AppColor.canvas)
+    .animation(.easeInOut(duration: 0.18), value: shellModel.isSidebarVisible)
     .sheet(isPresented: $showingCreateSet) {
       SetEditorSheet(mode: .create) { draft in
         await model.create(draft)
@@ -96,11 +101,111 @@ struct AppShellView: View {
     }
   }
 
+  private var sidebar: some View {
+    VStack(spacing: 0) {
+      sidebarHeader
+
+      VStack(spacing: 4) {
+        Text("WORKSPACE")
+          .font(.system(size: 10, weight: .semibold))
+          .tracking(0.45)
+          .foregroundStyle(.tertiary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 10)
+          .padding(.bottom, 6)
+
+        ForEach(AppSection.allCases) { item in
+          sidebarButton(for: item)
+        }
+      }
+      .padding(10)
+
+      Spacer(minLength: 16)
+
+      VStack(spacing: 10) {
+        AppDivider()
+        Button {
+          Task { await model.lock() }
+        } label: {
+          HStack(spacing: 9) {
+            Image(systemName: "lock")
+              .frame(width: 16)
+            Text("Lock Vault")
+            Spacer()
+            Text("⇧⌘L")
+              .font(.system(size: 10))
+              .foregroundStyle(.tertiary)
+          }
+          .font(.system(size: 12, weight: .medium))
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 13)
+        .keyboardShortcut("l", modifiers: [.command, .shift])
+      }
+    }
+    .background(AppColor.sidebar)
+  }
+
+  private var sidebarHeader: some View {
+    HStack(spacing: 10) {
+      BrandMark(size: 28)
+      VStack(alignment: .leading, spacing: 3) {
+        Text("EnvStore")
+          .font(.system(size: 14, weight: .semibold))
+
+        HStack(spacing: 4) {
+          Circle()
+            .fill(AppColor.success)
+            .frame(width: 5, height: 5)
+          Text("LOCAL VAULT")
+            .font(.system(size: 9, weight: .semibold))
+            .tracking(0.35)
+        }
+        .foregroundStyle(.secondary)
+      }
+
+      Spacer()
+      AppSidebarToggleButton()
+    }
+    .padding(.horizontal, 14)
+    .appShellHeader(background: AppColor.sidebar)
+  }
+
+  private func sidebarButton(for item: AppSection) -> some View {
+    Button {
+      section = item
+    } label: {
+      HStack(spacing: 9) {
+        Image(systemName: item.symbol)
+          .font(.system(size: 12, weight: .medium))
+          .frame(width: 17)
+        Text(item.navigationTitle)
+          .font(.system(size: 12, weight: .medium))
+        Spacer()
+      }
+      .foregroundStyle(section == item ? .primary : .secondary)
+      .padding(.horizontal, 10)
+      .frame(height: 34)
+      .contentShape(Rectangle())
+      .background(section == item ? AppColor.surface : Color.clear)
+      .clipShape(RoundedRectangle(cornerRadius: AppMetrics.cornerRadius))
+      .overlay {
+        if section == item {
+          RoundedRectangle(cornerRadius: AppMetrics.cornerRadius)
+            .stroke(AppColor.border, lineWidth: AppMetrics.hairline)
+        }
+      }
+    }
+    .buttonStyle(.plain)
+  }
+
   @ViewBuilder
   private var sectionContent: some View {
-    switch section ?? .sets {
+    switch section {
     case .sets:
-      SetListView(model: model, showingCreateSet: $showingCreateSet)
+      SetsWorkspaceView(model: model, showingCreateSet: $showingCreateSet)
     case .projects:
       ProjectsView(model: model)
     case .profiles:
@@ -108,31 +213,7 @@ struct AppShellView: View {
     case .activity:
       ActivityView(events: model.activity)
     case .settings:
-      SettingsView()
-    }
-  }
-
-  @ViewBuilder
-  private var sectionDetail: some View {
-    if section == .sets, let set = model.selectedSet {
-      SetDetailView(model: model, set: set)
-        .id(set.id.uuidString + "-\(set.revision)")
-    } else {
-      ContentUnavailableView(
-        section?.rawValue ?? "EnvStore",
-        systemImage: section?.symbol ?? "lock.shield",
-        description: Text(detailDescription)
-      )
-    }
-  }
-
-  private var detailDescription: String {
-    switch section ?? .sets {
-    case .sets: "Select a set to inspect its variables."
-    case .projects: "Project bindings resolve a set from the current directory."
-    case .profiles: "Profiles constrain commands used by agents."
-    case .activity: "Activity records actions, never secret values."
-    case .settings: "Security and integration settings."
+      SettingsView(setupModel: setupModel)
     }
   }
 
@@ -148,35 +229,55 @@ private struct LockView: View {
   @ObservedObject var model: VaultViewModel
 
   var body: some View {
-    VStack(spacing: 18) {
-      BrandMark(size: 64)
-      VStack(spacing: 6) {
-        Text("EnvStore")
-          .font(.system(size: 24, weight: .semibold))
-        Text("Local secrets. Exact commands. Nothing synced.")
-          .foregroundStyle(.secondary)
-      }
-      Button {
-        Task { await model.unlock() }
-      } label: {
-        HStack(spacing: 8) {
-          if model.lockState == .unlocking {
-            ProgressView().controlSize(.small)
-          } else {
-            Image(systemName: "touchid")
+    ZStack {
+      AppColor.canvas.ignoresSafeArea()
+
+      VStack(spacing: 0) {
+        VStack(spacing: 20) {
+          BrandMark(size: 52)
+          VStack(spacing: 7) {
+            Text("Welcome back")
+              .font(.system(size: 22, weight: .semibold))
+            Text("Unlock your local environment vault to continue.")
+              .font(.system(size: 13))
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
           }
-          Text(model.lockState == .unlocking ? "Unlocking…" : "Unlock Vault")
+
+          Button {
+            Task { await model.unlock() }
+          } label: {
+            HStack(spacing: 8) {
+              if model.lockState == .unlocking {
+                ProgressView()
+                  .controlSize(.small)
+                  .colorScheme(.dark)
+              } else {
+                Image(systemName: "touchid")
+              }
+              Text(model.lockState == .unlocking ? "Unlocking…" : "Unlock EnvStore")
+            }
+            .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.envPrimary)
+          .disabled(model.lockState == .unlocking)
+          .keyboardShortcut(.defaultAction)
         }
-        .frame(minWidth: 150, minHeight: AppMetrics.controlHeight)
+        .padding(32)
+
+        AppDivider()
+
+        HStack(spacing: 8) {
+          Image(systemName: "lock.shield")
+          Text("Touch ID or macOS password · Nothing leaves this Mac")
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 22)
+        .frame(height: 48)
       }
-      .buttonStyle(.borderedProminent)
-      .disabled(model.lockState == .unlocking)
-      .keyboardShortcut(.defaultAction)
-      Text("Touch ID or your macOS login password")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
+      .frame(width: 420)
+      .envStoreRaisedPanel()
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .padding(40)
   }
 }

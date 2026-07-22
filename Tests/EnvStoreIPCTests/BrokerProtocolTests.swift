@@ -10,7 +10,8 @@ struct BrokerProtocolTests {
       setName: "Production",
       workingDirectory: "/tmp/project/../project",
       executablePath: "/usr/bin/printenv",
-      arguments: ["API_TOKEN"]
+      arguments: ["API_TOKEN"],
+      executableSearchPath: ["/opt/homebrew/bin", "/usr/bin"]
     )
     let request = BrokerRequest(operation: .run, run: payload)
 
@@ -21,6 +22,26 @@ struct BrokerProtocolTests {
 
     #expect(decoded == request)
     #expect(decoded.run?.workingDirectory == "/tmp/project")
+    #expect(decoded.run?.executableSearchPath == ["/opt/homebrew/bin", "/usr/bin"])
+  }
+
+  @Test
+  func decodesLegacyRunAndProfilePayloadsWithoutExecutableSearchPath() throws {
+    let run = try BrokerCodec.decode(
+      RunCommandPayload.self,
+      from: Data(
+        #"{"executionID":"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE","setName":"Development","workingDirectory":"/tmp","executablePath":"/usr/bin/true","arguments":[]}"#.utf8
+      )
+    )
+    let profile = try BrokerCodec.decode(
+      ProfileRunPayload.self,
+      from: Data(
+        #"{"executionID":"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE","name":"Development","workingDirectory":"/tmp"}"#.utf8
+      )
+    )
+
+    #expect(run.executableSearchPath == nil)
+    #expect(profile.executableSearchPath == nil)
   }
 
   @Test
