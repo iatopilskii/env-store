@@ -19,12 +19,14 @@ jobs:
     env:
       ENVSTORE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
       ENVSTORE_BUILD_NUMBER: ${{ github.run_number }}
+      HAS_SIGNING_CREDENTIALS: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' && secrets.P12_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' && secrets.DEVELOPER_ID_APPLICATION != '' }}
+      HAS_NOTARIZATION_CREDENTIALS: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY != '' && secrets.APP_STORE_CONNECT_KEY_ID != '' && secrets.APP_STORE_CONNECT_ISSUER_ID != '' }}
     steps:
       - uses: actions/checkout@v6
       - name: Normalize tag version
         run: echo "ENVSTORE_VERSION=${ENVSTORE_VERSION#v}" >> "$GITHUB_ENV"
       - name: Import Developer ID certificate
-        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        if: env.HAS_SIGNING_CREDENTIALS == 'true'
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -46,7 +48,7 @@ jobs:
       - name: Package app, CLI, and skill
         run: scripts/package-release.sh
       - name: Notarize signed DMG
-        if: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY != '' }}
+        if: env.HAS_SIGNING_CREDENTIALS == 'true' && env.HAS_NOTARIZATION_CREDENTIALS == 'true'
         env:
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
